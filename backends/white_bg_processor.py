@@ -68,6 +68,7 @@ class WhiteBgProcessorBackend(QObject):
     errorOccurred = Signal(str)
     resultItemAdded = Signal(str, bool)
     busyChanged = Signal()
+    u2netAvailableChanged = Signal(bool)
 
     def __init__(self, u2net_available=False, app_dir="", parent=None):
         super().__init__(parent)
@@ -80,6 +81,15 @@ class WhiteBgProcessorBackend(QObject):
         self._session = None
         self._session_initialized = False
         self._default_path = "D:\\1上款"
+
+    @Slot()
+    def markU2netAvailable(self):
+        """模型下载完成后由外部调用,激活白底图功能。"""
+        self._u2net_available = True
+        # 重置 session 状态,下次使用时重新初始化
+        self._session = None
+        self._session_initialized = False
+        self.u2netAvailableChanged.emit(True)
 
     def _ensure_session(self):
         """懒加载 rembg session，避免启动时崩溃"""

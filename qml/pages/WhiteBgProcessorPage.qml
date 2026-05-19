@@ -7,6 +7,38 @@ import QtQuick.Dialogs
 Rectangle {
     color: "#F5F6F8"
     property var selectedIndependentFiles: []
+    property bool modelReady: u2netAvailable
+
+    Connections {
+        target: whiteBgProcessor
+        function onU2netAvailableChanged(v) { modelReady = v }
+    }
+
+    Connections {
+        target: modelDownloader
+        function onProgressChanged(pct, label) {
+            dlBar.value = pct / 100
+            dlStatus.text = label
+            dlStatus.color = "#555555"
+        }
+        function onSucceeded(modelId, path) {
+            dlStatus.text = "下载完成,模型已就绪"
+            dlStatus.color = "#388E3C"
+            dlBar.value = 1
+        }
+        function onFailedSig(modelId, err) {
+            dlStatus.text = err
+            dlStatus.color = err === "已取消" ? "#888888" : "#D32F2F"
+            dlBar.value = 0
+            dlBtn.enabled = true
+        }
+        function onBusyChanged() {
+            // 同步按钮启用状态(异步任务结束时)
+            if (!modelDownloader.busy && modelReady === false) {
+                dlBtn.enabled = true
+            }
+        }
+    }
 
     FolderDialog {
         id: dirDialog
@@ -244,6 +276,97 @@ Rectangle {
                         delegate: Label { text: model.text; color: "#00FF00"; font.pixelSize: 12; font.family: "Consolas"; width: ListView.view.width; wrapMode: Text.Wrap }
                         onCountChanged: positionViewAtEnd()
                     }
+                }
+            }
+        }
+    }
+
+    // 模型未下载时显示的遮罩卡片
+    Rectangle {
+        anchors.fill: parent
+        visible: !modelReady
+        color: "#E6F5F6F8"
+
+        Rectangle {
+            anchors.centerIn: parent
+            width: 480
+            height: 260
+            radius: 10
+            color: "#FFFFFF"
+            border.color: "#E0E0E0"
+
+            ColumnLayout {
+                anchors.fill: parent
+                anchors.margins: 24
+                spacing: 14
+
+                Label {
+                    text: "🖼️ 智能白底图 - 首次使用需下载模型"
+                    font.pixelSize: 18
+                    font.bold: true
+                    color: "#0078D4"
+                }
+                Label {
+                    text: "u2net 模型(约 " + modelDownloader.expectedSizeMb("u2net") + " MB),只需下载一次,后续自动使用本地文件。"
+                    color: "#555555"
+                    font.pixelSize: 13
+                    wrapMode: Text.WordWrap
+                    Layout.fillWidth: true
+                }
+
+                ProgressBar {
+                    id: dlBar
+                    Layout.fillWidth: true
+                    from: 0; to: 1; value: 0
+                    contentItem: Item {
+                        implicitHeight: 6
+                        Rectangle { width: dlBar.visualPosition * parent.width; height: parent.height; radius: 3; color: "#0078D4" }
+                    }
+                }
+                Label {
+                    id: dlStatus
+                    text: "等待开始"
+                    color: "#888888"
+                    font.pixelSize: 12
+                    Layout.fillWidth: true
+                    elide: Text.ElideRight
+                }
+
+                Item { Layout.fillHeight: true }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 10
+
+                    ModernButton {
+                        id: dlBtn
+                        Layout.fillWidth: true
+                        implicitHeight: 40
+                        text: modelDownloader.busy ? "📥 下载中..." : "📥 下载模型"
+                        enabled: !modelDownloader.busy
+                        onClicked: {
+                            dlStatus.color = "#888888"
+                            dlStatus.text = "连接中..."
+                            dlBar.value = 0
+                            modelDownloader.download("u2net")
+                        }
+                    }
+                    ModernButton {
+                        id: cancelBtn
+                        implicitHeight: 40
+                        implicitWidth: 100
+                        visible: modelDownloader.busy
+                        text: "取消"
+                        onClicked: modelDownloader.cancel()
+                    }
+                }
+
+                Label {
+                    text: "国内访问 GitHub 较慢属正常现象,实在太慢可取消后稍后重试"
+                    color: "#AAAAAA"
+                    font.pixelSize: 11
+                    Layout.fillWidth: true
+                    horizontalAlignment: Text.AlignHCenter
                 }
             }
         }
