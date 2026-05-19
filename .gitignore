@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# PyInstaller
+build/
+dist/
+*.spec
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# 大模型/资源(单独下载)
+.u2net/
+*.onnx
+
+# 临时文件
+*.tmp
+*.part
+*.log
+
+# 系统
+.DS_Store
+Thumbs.db
