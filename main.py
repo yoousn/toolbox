@@ -24,7 +24,7 @@ from backends.model_downloader import ModelDownloaderBackend
 from backends.update_checker import UpdateCheckerBackend
 
 
-__version__ = "1.0.9"
+__version__ = "1.1.0"
 GITHUB_REPO = "yoousn/toolbox"
 
 
@@ -39,11 +39,15 @@ def main():
     font = QFont("Microsoft YaHei UI", 9)
     app.setFont(font)
 
-    # 程序所在目录: PyInstaller 打包后 exe 同级目录,开发模式用脚本目录
+    # 两个关键目录:
+    #   app_dir      → exe 所在目录(更新替换、模型下载等)
+    #   resource_dir  → QML 等资源目录(PyInstaller 打包后是 _MEIPASS 临时目录)
     if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
         app_dir = Path(sys.executable).parent
+        resource_dir = Path(sys._MEIPASS)
     else:
         app_dir = Path(os.path.dirname(os.path.abspath(__file__)))
+        resource_dir = app_dir
 
     engine = QQmlApplicationEngine()
 
@@ -87,8 +91,8 @@ def main():
     ctx.setContextProperty("appVersion", __version__)
     ctx.setContextProperty("u2netAvailable", u2net_available)
 
-    # 加载 QML
-    qml_file = str(app_dir / "qml" / "Main.qml")
+    # 加载 QML(从资源目录,不是 app_dir)
+    qml_file = str(resource_dir / "qml" / "Main.qml")
     engine.load(qml_file)
 
     if not engine.rootObjects():
