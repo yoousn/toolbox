@@ -244,30 +244,55 @@ class UpdateCheckerBackend(QObject):
         contents = list(extract_path.iterdir())
         source_dir = contents[0] if len(contents) == 1 and contents[0].is_dir() else extract_path
 
-        app_dir = Path(self._app_dir)
-        exe_name = Path(sys.executable).name
+        # 对于 PyInstaller 打包的 exe, sys.executable 就是 exe 本身
+        # 使用 _MEIPASS 环境变量判断是否是 PyInstaller 环境
+        if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+            # PyInstaller 打包模式: exe 在 app_dir 下
+            app_dir = Path(sys.executable).parent.resolve()
+            exe_name = Path(sys.executable).name
+        else:
+            # 开发模式
+            app_dir = Path(self._app_dir).resolve()
+            exe_name = Path(sys.executable).name
 
         # 生成 updater.bat
         # 策略: 先 xcopy /C 复制所有文件(跳过被占用的exe),再循环重试exe直到替换成功
         bat_path = Path(tempfile.gettempdir()) / "toolbox_updater.bat"
+
+        # 使用短路径名避免中文/空格问题
+        source_dir_str = str(source_dir)
+        app_dir_str = str(app_dir)
+        exe_path = app_dir / exe_name
+
         bat_content = f'''@echo off
+chcp 65001 >nul 2>&1
+echo ========================================
 echo 正在更新工具箱,请稍候...
+echo 源目录: {source_dir_str}
+echo 目标目录: {app_dir_str}
+echo 目标exe: {exe_path}
+echo ========================================
 timeout /t 3 /nobreak >nul
-echo 复制更新文件...
-xcopy /E /Y /Q /C "{source_dir}\\*" "{app_dir}\\"
-echo 替换主程序...
-:retry_exe
-copy /Y "{source_dir}\\{exe_name}" "{app_dir}\\{exe_name}" >nul 2>&1
+echo [1/3] 复制更新文件...
+xcopy /E /Y /Q /C "{source_dir_str}\\*" "{app_dir_str}\\"
 if errorlevel 1 (
+    echo xcopy 出错,错误码: %errorlevel%
+)
+echo [2/3] 替换主程序...
+:retry_exe
+copy /Y "{source_dir_str}\\{exe_name}" "{app_dir_str}\\{exe_name}" >nul 2>&1
+if errorlevel 1 (
+    echo 等待旧进程释放exe...
     timeout /t 1 /nobreak >nul
     goto retry_exe
 )
-echo 更新完成,正在重启...
-start "" "{app_dir / exe_name}"
+echo [3/3] 清理临时文件...
 rmdir /S /Q "{extract_path}"
+echo 更新完成,正在重启...
+start "" "{exe_path}"
 del "%~f0"
 '''
-        bat_path.write_text(bat_content, encoding="gbk")
+        bat_path.write_text(bat_content, encoding="utf-8")
 
         # 启动 bat 并退出当前程序
         os.startfile(str(bat_path))

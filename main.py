@@ -24,7 +24,7 @@ from backends.model_downloader import ModelDownloaderBackend
 from backends.update_checker import UpdateCheckerBackend
 
 
-__version__ = "1.0.8"
+__version__ = "1.0.9"
 GITHUB_REPO = "yoousn/toolbox"
 
 
@@ -39,8 +39,11 @@ def main():
     font = QFont("Microsoft YaHei UI", 9)
     app.setFont(font)
 
-    # 程序所在目录(打包后是 exe 同级目录)
-    app_dir = Path(os.path.dirname(os.path.abspath(__file__)))
+    # 程序所在目录: PyInstaller 打包后 exe 同级目录,开发模式用脚本目录
+    if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+        app_dir = Path(sys.executable).parent
+    else:
+        app_dir = Path(os.path.dirname(os.path.abspath(__file__)))
 
     engine = QQmlApplicationEngine()
 
