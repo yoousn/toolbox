@@ -294,13 +294,13 @@ Rectangle {
 
         Component.onCompleted: {
             if (!modelReady) {
-                // 先立刻加载镜像列表(无延迟数据,保证界面有内容)
-                var mirrorsJson = modelDownloader.getMirrors()
-                var mirrors = JSON.parse(mirrorsJson)
-                for (var i = 0; i < mirrors.length; i++) {
-                    mirrors[i].latency = -2 //  -2 表示等待测速
-                }
-                mirrorData = mirrors
+                // 直接硬编码镜像列表,不依赖 JSON.parse(兼容所有 Qt 版本)
+                mirrorData = [
+                    { id: "github",      name: "GitHub 官方",   url: "https://github.com/danielgatis/rembg/releases/download/v0.0.0/u2net.onnx",                                          latency: -2 },
+                    { id: "ghproxy",     name: "GHProxy 加速",   url: "https://mirror.ghproxy.com/https://github.com/danielgatis/rembg/releases/download/v0.0.0/u2net.onnx",             latency: -2 },
+                    { id: "huggingface", name: "HuggingFace",    url: "https://huggingface.co/BritishWerewolf/U-2-Net/resolve/main/u2net.onnx",                                           latency: -2 },
+                    { id: "sourceforge", name: "SourceForge",    url: "https://sourceforge.net/projects/bgremover-app/files/u2net/u2net.onnx/download",                                  latency: -2 }
+                ]
 
                 // 然后异步测延迟
                 latencyTesting = true

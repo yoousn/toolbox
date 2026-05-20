@@ -248,11 +248,20 @@ class UpdateCheckerBackend(QObject):
         exe_name = Path(sys.executable).name
 
         # 生成 updater.bat
+        # 策略: 先 xcopy /C 复制所有文件(跳过被占用的exe),再循环重试exe直到替换成功
         bat_path = Path(tempfile.gettempdir()) / "toolbox_updater.bat"
         bat_content = f'''@echo off
 echo 正在更新工具箱,请稍候...
-timeout /t 2 /nobreak >nul
-xcopy /E /Y /Q "{source_dir}\\*" "{app_dir}\\"
+timeout /t 3 /nobreak >nul
+echo 复制更新文件...
+xcopy /E /Y /Q /C "{source_dir}\\*" "{app_dir}\\"
+echo 替换主程序...
+:retry_exe
+copy /Y "{source_dir}\\{exe_name}" "{app_dir}\\{exe_name}" >nul 2>&1
+if errorlevel 1 (
+    timeout /t 1 /nobreak >nul
+    goto retry_exe
+)
 echo 更新完成,正在重启...
 start "" "{app_dir / exe_name}"
 rmdir /S /Q "{extract_path}"
