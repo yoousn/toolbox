@@ -24,7 +24,7 @@ from backends.model_downloader import ModelDownloaderBackend
 from backends.update_checker import UpdateCheckerBackend
 
 
-__version__ = "1.0.3"
+__version__ = "1.0.4"
 GITHUB_REPO = "yoousn/toolbox"
 
 
@@ -62,11 +62,12 @@ def main():
             white_bg.markU2netAvailable()
     model_downloader.succeeded.connect(_on_model_downloaded)
 
-    # 更新检查(私人仓库需要 token,从环境变量读;Public 仓库可以为空)
+    # 更新检查(公开仓库不需要 token)
     update_checker = UpdateCheckerBackend(
         repo=GITHUB_REPO,
         current_version=__version__,
         token=os.environ.get("TOOLBOX_GH_TOKEN", ""),
+        app_dir=str(app_dir),
     )
 
     # ---- 注册到 QML 引擎 ----

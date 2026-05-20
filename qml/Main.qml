@@ -21,6 +21,8 @@ ApplicationWindow {
     property string latestVersion: ""
     property string downloadUrl: ""
     property string releaseNotes: ""
+    property bool updateDownloading: false
+    property bool updateReady: false
 
     Connections {
         target: updateChecker
@@ -30,6 +32,21 @@ ApplicationWindow {
             releaseNotes = notes
             updateDialog.open()
         }
+        function onDownloadProgress(pct, label) {
+            updateBar.value = pct / 100
+            updateStatusLabel.text = label
+        }
+        function onDownloadFinished() {
+            updateDownloading = false
+            updateReady = true
+            updateStatusLabel.text = "下载完成,点击安装更新"
+            updateBar.value = 1
+        }
+        function onDownloadFailed(err) {
+            updateDownloading = false
+            updateStatusLabel.text = "失败: " + err
+            updateStatusLabel.color = "#D32F2F"
+        }
     }
 
     // 更新提示弹窗
@@ -37,9 +54,10 @@ ApplicationWindow {
         id: updateDialog
         title: "发现新版本"
         anchors.centerIn: parent
-        width: 420
+        width: 440
         modal: true
         standardButtons: Dialog.NoButton
+        closePolicy: Popup.CloseOnEscape
 
         ColumnLayout {
             width: parent.width
@@ -62,31 +80,78 @@ ApplicationWindow {
                 color: "#E0E0E0"
             }
             Label {
-                text: releaseNotes || "有新的更新可用,建议下载最新版本。"
-                font.pixelSize: 13
+                text: releaseNotes || "有新的更新可用,建议更新到最新版本。"
+                font.pixelSize: 12
                 color: "#333333"
                 wrapMode: Text.WordWrap
                 Layout.fillWidth: true
-                Layout.maximumHeight: 120
+                Layout.maximumHeight: 80
                 elide: Text.ElideRight
             }
+
+            // 下载进度区
+            ColumnLayout {
+                Layout.fillWidth: true
+                spacing: 6
+                visible: updateDownloading || updateReady
+
+                ProgressBar {
+                    id: updateBar
+                    Layout.fillWidth: true
+                    from: 0; to: 1; value: 0
+                    contentItem: Item {
+                        implicitHeight: 6
+                        Rectangle { width: updateBar.visualPosition * parent.width; height: parent.height; radius: 3; color: "#0078D4" }
+                    }
+                }
+                Label {
+                    id: updateStatusLabel
+                    text: "准备下载..."
+                    color: "#555555"
+                    font.pixelSize: 11
+                    Layout.fillWidth: true
+                    elide: Text.ElideRight
+                }
+            }
+
+            // 按钮行
             RowLayout {
                 Layout.fillWidth: true
                 spacing: 10
                 Item { Layout.fillWidth: true }
+
                 ModernButton {
                     text: "稍后再说"
                     implicitHeight: 36
                     implicitWidth: 100
+                    visible: !updateDownloading
                     onClicked: updateDialog.close()
                 }
                 ModernButton {
-                    text: "📥 下载更新"
+                    text: updateReady ? "🔄 安装并重启" : (updateDownloading ? "下载中..." : "📥 立即更新")
                     implicitHeight: 36
-                    implicitWidth: 120
+                    implicitWidth: 130
+                    enabled: !updateDownloading
                     onClicked: {
-                        Qt.openUrlExternally(downloadUrl)
-                        updateDialog.close()
+                        if (updateReady) {
+                            updateChecker.applyUpdate()
+                        } else {
+                            updateDownloading = true
+                            updateStatusLabel.color = "#555555"
+                            updateStatusLabel.text = "连接中..."
+                            updateBar.value = 0
+                            updateChecker.downloadUpdate(downloadUrl)
+                        }
+                    }
+                }
+                ModernButton {
+                    text: "取消"
+                    implicitHeight: 36
+                    implicitWidth: 70
+                    visible: updateDownloading
+                    onClicked: {
+                        updateChecker.cancelDownload()
+                        updateDownloading = false
                     }
                 }
             }
