@@ -183,10 +183,16 @@ Rectangle {
             }
         }
 
-        // 底部版本号
+        // 底部署名和版本号
         Label {
-            text: "v1.0.0"
-            color: "#BBBBBB"
+            text: "by: ysn~"
+            color: "#F57C00"
+            font.pixelSize: 11
+            Layout.alignment: Qt.AlignHCenter
+        }
+        Label {
+            text: "v" + appVersion
+            color: "#F57C00"
             font.pixelSize: 11
             Layout.alignment: Qt.AlignHCenter
         }
