@@ -426,76 +426,79 @@ Rectangle {
                             color: selectedUrl === mUrl ? "#EAF4FC" : (mirrorHover.containsMouse ? "#F2F2F2" : "#FFFFFF")
                             border.color: selectedUrl === mUrl ? "#0078D4" : "#E8E8E8"
 
-                            RowLayout {
-                                anchors.fill: parent
-                                anchors.leftMargin: 12
-                                anchors.rightMargin: 12
-                                spacing: 10
-
-                                // 选中指示
-                                Rectangle {
-                                    width: 16; height: 16; radius: 8
-                                    border.color: selectedUrl === mUrl ? "#0078D4" : "#CCCCCC"
-                                    border.width: 2
-                                    color: "transparent"
-                                    Rectangle {
-                                        anchors.centerIn: parent
-                                        width: 8; height: 8; radius: 4
-                                        color: "#0078D4"
-                                        visible: selectedUrl === mUrl
-                                    }
-                                }
-
-                                // 源名称
-                                Label {
-                                    text: mName
-                                    font.pixelSize: 13
-                                    font.bold: selectedUrl === mUrl
-                                    color: "#333333"
-                                    Layout.preferredWidth: 110
-                                }
-
-                                // 超链接(可手动下载)
-                                Label {
-                                    text: "<a href='" + mUrl + "'>手动下载</a>"
-                                    font.pixelSize: 11
-                                    color: "#0078D4"
-                                    textFormat: Text.RichText
-                                    onLinkActivated: function(link) { Qt.openUrlExternally(link) }
-                                    MouseArea {
-                                        anchors.fill: parent
-                                        cursorShape: Qt.PointingHandCursor
-                                        onClicked: Qt.openUrlExternally(mUrl)
-                                    }
-                                }
-
-                                Item { Layout.fillWidth: true }
-
-                                // 延迟显示
-                                Label {
-                                    text: {
-                                        if (mLatency === -2) return latencyTesting ? "测速中..." : "等待测速..."
-                                        if (mLatency < 0) return "超时"
-                                        return mLatency + " ms"
-                                    }
-                                    font.pixelSize: 12
-                                    font.bold: true
-                                    color: {
-                                        if (mLatency === -2) return "#999999"
-                                        if (mLatency < 0) return "#D32F2F"
-                                        if (mLatency < 500) return "#388E3C"
-                                        if (mLatency < 2000) return "#F57C00"
-                                        return "#D32F2F"
-                                    }
-                                }
-                            }
-
                             MouseArea {
                                 id: mirrorHover
                                 anchors.fill: parent
                                 hoverEnabled: true
                                 cursorShape: Qt.PointingHandCursor
                                 onClicked: selectedUrl = mUrl
+
+                                RowLayout {
+                                    anchors.fill: parent
+                                    anchors.leftMargin: 12
+                                    anchors.rightMargin: 12
+                                    spacing: 10
+                                    // 阻止事件继续穿透到 MouseArea(避免子组件和父级冲突)
+                                    Rectangle {
+                                        anchors.fill: parent
+                                        color: "transparent"
+                                    }
+
+                                    // 选中指示
+                                    Rectangle {
+                                        width: 16; height: 16; radius: 8
+                                        border.color: selectedUrl === mUrl ? "#0078D4" : "#CCCCCC"
+                                        border.width: 2
+                                        color: "transparent"
+                                        Rectangle {
+                                            anchors.centerIn: parent
+                                            width: 8; height: 8; radius: 4
+                                            color: "#0078D4"
+                                            visible: selectedUrl === mUrl
+                                        }
+                                    }
+
+                                    // 源名称
+                                    Label {
+                                        text: mName
+                                        font.pixelSize: 13
+                                        font.bold: selectedUrl === mUrl
+                                        color: "#333333"
+                                        Layout.preferredWidth: 110
+                                    }
+
+                                    // 手动下载按钮(独立可点击区域)
+                                    Text {
+                                        text: "手动下载"
+                                        font.pixelSize: 11
+                                        color: "#0078D4"
+                                        MouseArea {
+                                            anchors.fill: parent
+                                            cursorShape: Qt.PointingHandCursor
+                                            onClicked: Qt.openUrlExternally(mUrl)
+                                        }
+                                    }
+
+                                    Item { Layout.fillWidth: true }
+
+                                    // 延迟显示
+                                    Label {
+                                        text: {
+                                            if (mLatency === -2) return latencyTesting ? "测速中..." : "等待测速..."
+                                            if (mLatency < 0) return "超时"
+                                            return mLatency + " ms"
+                                        }
+                                        font.pixelSize: 12
+                                        font.bold: true
+                                        color: {
+                                            if (mLatency === -2) return "#999999"
+                                            if (mLatency < 0) return "#D32F2F"
+                                            if (mLatency < 500) return "#388E3C"
+                                            if (mLatency < 2000) return "#F57C00"
+                                            return "#D32F2F"
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
