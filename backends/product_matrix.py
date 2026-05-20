@@ -126,6 +126,11 @@ class ProductMatrixBackend(QObject):
 
     @Slot(str)
     def generateExcel(self, out_path):
+        import urllib.parse
+        if out_path.startswith("file:///"):
+            out_path = out_path[8:]
+        out_path = os.path.normpath(urllib.parse.unquote(out_path))
+
         if not self.task_queue:
             self.generateError.emit("队列为空，请先录入商品！")
             return

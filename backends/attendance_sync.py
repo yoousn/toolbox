@@ -19,8 +19,11 @@ class AttendanceSyncWorker(QThread):
     def run(self):
         try:
             import xlwings as xw
+            import urllib.parse
 
-            file_path = self.file_path
+            # URL 解码并格式化路径，解决中文与空格导致打不开 Excel 的致命 Bug
+            file_path = os.path.normpath(urllib.parse.unquote(self.file_path))
+            
             # 密码从环境变量读取,避免硬编码泄露
             password = os.environ.get("TOOLBOX_EXCEL_PWD", "")
 
@@ -51,9 +54,10 @@ class AttendanceSyncWorker(QThread):
             # 修正舍入误差
             noon_probs[0] += 100 - sum(noon_probs)
 
-            noon_out_range = s.get('noon_out_range', 5)
-            morning_out_range = s.get('morning_out_range', 5)
-            night_out_range = s.get('night_out_range', 5)
+            # 防御性参数处理：若 out_range 被用户设为 0，用 max(1, out_range) 规避崩溃
+            noon_out_range = max(1, s.get('noon_out_range', 5))
+            morning_out_range = max(1, s.get('morning_out_range', 5))
+            night_out_range = max(1, s.get('night_out_range', 5))
 
             raw_mp = [s.get('morning_p1', 80),
                       s.get('morning_p2', 20)]
@@ -74,32 +78,62 @@ class AttendanceSyncWorker(QThread):
                 h, m = map(int, t_str.split(':'))
                 return h * 60 + m
 
-            def generate_new_times(shift):
+            def generate_new_times(shift, force_late=None):
                 while True:
                     is_late_over_20 = False
                     if shift == 'morning':
-                        if random.randint(1, 100) <= morning_probs[0]:
-                            h, m = 7, random.randint(39, 51)
-                        else:
+                        if force_late is True:
+                            # 强制迟到：51~60 分
                             m = random.randint(51, 60)
                             h = 8 if m == 60 else 7
                             m = 0 if m == 60 else m
+                        elif force_late is False:
+                            # 强制不迟到：39~50 分
+                            h, m = 7, random.randint(39, 50)
+                        else:
+                            # 随机模式
+                            if random.randint(1, 100) <= morning_probs[0]:
+                                h, m = 7, random.randint(39, 50)
+                            else:
+                                m = random.randint(51, 60)
+                                h = 8 if m == 60 else 7
+                                m = 0 if m == 60 else m
+                        
                         if h == 8 or (h == 7 and m > 50):
                             is_late_over_20 = True
+
                     elif shift == 'noon':
-                        r = random.randint(1, 100)
-                        if r <= noon_probs[0]:
-                            if raw_p[0] == 0:
-                                # 该区间概率为0但舍入修正可能落入
+                        if force_late is True:
+                            # 强制迟到：21~30 分
+                            h, m = 12, random.randint(21, 30)
+                        elif force_late is False:
+                            # 强制不迟到：2~20 分
+                            p0 = noon_probs[0]
+                            p1 = noon_probs[1]
+                            total_p = p0 + p1
+                            if total_p > 0 and random.randint(1, total_p) <= p0:
+                                if raw_p[0] == 0:
+                                    h, m = 12, random.randint(10, 20)
+                                else:
+                                    h, m = 12, random.randint(2, 9)
+                            else:
+                                h, m = 12, random.randint(10, 20)
+                        else:
+                            # 随机模式
+                            r = random.randint(1, 100)
+                            if r <= noon_probs[0]:
+                                if raw_p[0] == 0:
+                                    h, m = 12, random.randint(10, 19)
+                                else:
+                                    h, m = 12, random.randint(2, 9)
+                            elif r <= noon_probs[0] + noon_probs[1]:
                                 h, m = 12, random.randint(10, 19)
                             else:
-                                h, m = 12, random.randint(2, 9)
-                        elif r <= noon_probs[0] + noon_probs[1]:
-                            h, m = 12, random.randint(10, 19)
-                        else:
-                            h, m = 12, random.randint(20, 30)
+                                h, m = 12, random.randint(20, 30)
+                        
                         if m > 20:
                             is_late_over_20 = True
+
                     elif shift == 'night':
                         if random.random() < 0.8:
                             h, m = 15, random.randint(15, 40)
@@ -110,11 +144,11 @@ class AttendanceSyncWorker(QThread):
                     if state['used_times'].get(time_str, 0) \
                             >= same_time_limit:
                         continue
-                    if is_late_over_20 and shift != 'night':
-                        if late_mode == 0:
-                            if state['late_over_20'] >= late_limit:
+                    
+                    if shift != 'night':
+                        if force_late is None and late_mode == 0:
+                            if is_late_over_20 and state['late_over_20'] >= late_limit:
                                 continue
-                        # 指定模式下不在这里限制，后面统一处理
 
                     state['used_times'][time_str] = \
                         state['used_times'].get(time_str, 0) + 1
@@ -130,7 +164,12 @@ class AttendanceSyncWorker(QThread):
 
                     return time_str, out_time
 
+            # --- 步骤1: 两阶段精准分配 ---
+            # 阶段 A：扫描所有日期，识别班次及过滤特殊班次
+            day_shifts = {}
             skipped_days = []
+            special_days = set()
+
             for col in range(1, 32):
                 cell = sheet1.range((6, col))
                 val = cell.value
@@ -145,11 +184,10 @@ class AttendanceSyncWorker(QThread):
                     if t_out < t_in:
                         t_out += 24 * 60
 
+                    # 识别特殊班次并跳过
                     if ((9*60 <= t_in <= 11*60+30) and
                             (17*60 <= t_out <= 20*60)):
-                        self.logSignal.emit(
-                            f"⚠️ 特殊班次: 第【{col}】号 "
-                            f"[{in_time} - {out_time}]，已跳过")
+                        special_days.add(col)
                         continue
 
                     shift = None
@@ -165,14 +203,41 @@ class AttendanceSyncWorker(QThread):
                         shift = 'morning'
 
                     if shift:
-                        new_in, new_out = generate_new_times(shift)
-                        cell.number_format = '@'
-                        cell.value = f"{new_in}\n{new_out}"
-                        cell.api.WrapText = True
-                        sync_data[col] = (new_in, new_out)
+                        day_shifts[col] = shift
                     else:
                         skipped_days.append(
                             f"第{col}号[{in_time}-{out_time}]")
+
+            # 阶段 B：如果为“指定次数”模式，确定需要强制迟到的天数
+            late_days = set()
+            if late_mode == 1:
+                eligible_days = [c for c, sh in day_shifts.items() if sh in ('morning', 'noon')]
+                late_days = set(random.sample(eligible_days, min(late_count, len(eligible_days))))
+
+            # 阶段 C：依次生成打卡时间并写入单元格
+            for col in sorted(day_shifts.keys()):
+                shift = day_shifts[col]
+                force_late = None
+                if late_mode == 1:
+                    force_late = (col in late_days)
+
+                new_in, new_out = generate_new_times(shift, force_late)
+                cell = sheet1.range((6, col))
+                cell.number_format = '@'
+                cell.value = f"{new_in}\n{new_out}"
+                cell.api.WrapText = True
+                sync_data[col] = (new_in, new_out)
+
+            # 打印特殊班次跳过日志
+            for col in sorted(special_days):
+                cell = sheet1.range((6, col))
+                val = cell.value
+                times = re.findall(r"(\d{1,2}:\d{2})", str(val))
+                in_time = times[0]
+                out_time = times[-1]
+                self.logSignal.emit(
+                    f"⚠️ 特殊班次: 第【{col}】号 "
+                    f"[{in_time} - {out_time}]，已跳过")
 
             sheet1.api.Protect(password)
             self.logSignal.emit(

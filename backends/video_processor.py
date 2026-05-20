@@ -129,8 +129,11 @@ class VideoProcessorBackend(QObject):
     def startTask(self, root_dir, file_format, mode):
         if self._busy:
             return
+        import urllib.parse
         if root_dir.startswith("file:///"):
             root_dir = root_dir[8:]
+        root_dir = os.path.normpath(urllib.parse.unquote(root_dir))
+
         if not root_dir or not os.path.isdir(root_dir):
             self.logMessage.emit("请选择有效的文件夹路径！")
             return

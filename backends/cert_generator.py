@@ -55,12 +55,13 @@ class CertGeneratorBackend(QObject):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self._image_path = r"C:\Users\Administrator\Desktop\cs\合格证.png"
-        self._output_folder = r"C:\Users\Administrator\Desktop\cs\x"
+        desktop = os.path.join(os.path.expanduser("~"), "Desktop")
+        self._image_path = os.path.normpath(os.path.join(desktop, "cs", "合格证.png"))
+        self._output_folder = os.path.normpath(os.path.join(desktop, "cs", "x"))
         self._browse_folder = r"D:\1上款"
         self._selected_folder = ""
         self._subdirectories = []
-        self._default_image_folder = r"C:\Users\Administrator\Desktop\上款"
+        self._default_image_folder = os.path.normpath(os.path.join(desktop, "上款"))
 
     @Slot(result=str)
     def getDefaultBrowseFolder(self):
@@ -76,22 +77,28 @@ class CertGeneratorBackend(QObject):
 
     @Slot(str)
     def setImagePath(self, path):
+        import urllib.parse
         if path.startswith("file:///"):
             path = path[8:]
+        path = os.path.normpath(urllib.parse.unquote(path))
         self._image_path = path
         self.logMessage.emit(f"已选择图片: {path}")
 
     @Slot(str)
     def setSelectedFolder(self, path):
+        import urllib.parse
         if path.startswith("file:///"):
             path = path[8:]
+        path = os.path.normpath(urllib.parse.unquote(path))
         self._selected_folder = path
         self.logMessage.emit(f"当前主目录: {path}")
 
     @Slot(str)
     def setOutputFolder(self, path):
+        import urllib.parse
         if path.startswith("file:///"):
             path = path[8:]
+        path = os.path.normpath(urllib.parse.unquote(path))
         self._output_folder = path
         self.logMessage.emit(f"统一存放目录: {path}")
 

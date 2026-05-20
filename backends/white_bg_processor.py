@@ -121,6 +121,11 @@ class WhiteBgProcessorBackend(QObject):
 
     @Slot(str, str)
     def detectImages(self, base_dir, filename):
+        import urllib.parse
+        if base_dir.startswith("file:///"):
+            base_dir = base_dir[8:]
+        base_dir = os.path.normpath(urllib.parse.unquote(base_dir))
+
         if not os.path.exists(base_dir):
             self.logMessage.emit("[错误] 指定目录不存在！")
             return
@@ -164,7 +169,14 @@ class WhiteBgProcessorBackend(QObject):
 
     @Slot(list, str)
     def processSpecificFiles(self, file_paths, save_format):
-        self._image_paths = [str(p) for p in file_paths]
+        import urllib.parse
+        self._image_paths = []
+        for p in file_paths:
+            path_str = str(p)
+            if path_str.startswith("file:///"):
+                path_str = path_str[8:]
+            path_str = os.path.normpath(urllib.parse.unquote(path_str))
+            self._image_paths.append(path_str)
         self.processImages(save_format)
 
     @Slot(str)

@@ -251,18 +251,25 @@ class UpdateCheckerBackend(QObject):
             app_dir = Path(sys.executable).parent.resolve()
             exe_name = Path(sys.executable).name
         else:
-            # 开发模式
+            # 开发模式: 默认主程序为 toolbox.exe, 绝对不能指向 sys.executable (即 python.exe)
             app_dir = Path(self._app_dir).resolve()
-            exe_name = Path(sys.executable).name
+            exe_name = "toolbox.exe"
+
+        # 寻找解压源目录中的 exe 文件(动态适配更新包内主程序名)
+        source_exes = list(source_dir.glob("*.exe"))
+        if source_exes:
+            source_exe_name = source_exes[0].name
+        else:
+            source_exe_name = "toolbox.exe"
 
         # 生成 updater.bat
         # 策略: 先 xcopy /C 复制所有文件(跳过被占用的exe),再循环重试exe直到替换成功
         bat_path = Path(tempfile.gettempdir()) / "toolbox_updater.bat"
 
         # 使用短路径名避免中文/空格问题
-        source_dir_str = str(source_dir)
-        app_dir_str = str(app_dir)
-        exe_path = app_dir / exe_name
+        source_dir_str = os.path.normpath(str(source_dir))
+        app_dir_str = os.path.normpath(str(app_dir))
+        exe_path_str = os.path.normpath(str(app_dir / exe_name))
 
         bat_content = f'''@echo off
 chcp 65001 >nul 2>&1
@@ -270,7 +277,7 @@ echo ========================================
 echo 正在更新工具箱,请稍候...
 echo 源目录: {source_dir_str}
 echo 目标目录: {app_dir_str}
-echo 目标exe: {exe_path}
+echo 目标exe: {exe_path_str}
 echo ========================================
 timeout /t 3 /nobreak >nul
 echo [1/3] 复制更新文件...
@@ -279,17 +286,22 @@ if errorlevel 1 (
     echo xcopy 出错,错误码: %errorlevel%
 )
 echo [2/3] 替换主程序...
+if not exist "{source_dir_str}\\{source_exe_name}" (
+    echo [错误] 升级包中未找到主程序 {source_exe_name}, 跳过程序替换。
+    goto cleanup
+)
 :retry_exe
-copy /Y "{source_dir_str}\\{exe_name}" "{app_dir_str}\\{exe_name}" >nul 2>&1
+copy /Y "{source_dir_str}\\{source_exe_name}" "{app_dir_str}\\{exe_name}" >nul 2>&1
 if errorlevel 1 (
     echo 等待旧进程释放exe...
     timeout /t 1 /nobreak >nul
     goto retry_exe
 )
+:cleanup
 echo [3/3] 清理临时文件...
-rmdir /S /Q "{extract_path}"
+rmdir /S /Q "{os.path.normpath(str(extract_path))}"
 echo 更新完成,正在重启...
-start "" "{exe_path}"
+start "" "{exe_path_str}"
 del "%~f0"
 '''
         bat_path.write_text(bat_content, encoding="utf-8")

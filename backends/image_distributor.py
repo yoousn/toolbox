@@ -29,8 +29,10 @@ class ImageDistributorBackend(QObject):
 
     @Slot(str)
     def setSourceImage(self, path):
+        import urllib.parse
         if path.startswith("file:///"):
             path = path[8:]
+        path = os.path.normpath(urllib.parse.unquote(path))
         self._source_image = path
         self.logMessage.emit(f"已选择图片: {path}")
 
@@ -40,8 +42,10 @@ class ImageDistributorBackend(QObject):
 
     @Slot(str, result=bool)
     def addTargetFolder(self, path):
+        import urllib.parse
         if path.startswith("file:///"):
             path = path[8:]
+        path = os.path.normpath(urllib.parse.unquote(path))
         if path and path not in self._target_folders:
             self._target_folders.append(path)
             self._last_target_dir = path

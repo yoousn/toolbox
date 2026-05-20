@@ -18,6 +18,11 @@ class ImageFileCheckerBackend(QObject):
 
     @Slot(str, list)
     def checkFiles(self, folder_path, filenames):
+        import urllib.parse
+        if folder_path.startswith("file:///"):
+            folder_path = folder_path[8:]
+        folder_path = os.path.normpath(urllib.parse.unquote(folder_path))
+
         if not folder_path or not os.path.isdir(folder_path):
             self.logMessage.emit("[错误] 请先选择一个有效的目标文件夹！")
             return
@@ -30,6 +35,11 @@ class ImageFileCheckerBackend(QObject):
 
     @Slot(str, list)
     def deleteFiles(self, folder_path, filenames):
+        import urllib.parse
+        if folder_path.startswith("file:///"):
+            folder_path = folder_path[8:]
+        folder_path = os.path.normpath(urllib.parse.unquote(folder_path))
+
         if not folder_path or not os.path.isdir(folder_path):
             self.logMessage.emit("[错误] 请先选择一个有效的目标文件夹！")
             return
@@ -95,6 +105,11 @@ class ImageFileCheckerBackend(QObject):
 
     @Slot(list, bool, str)
     def restoreFiles(self, recycle_names, to_original, restore_path):
+        import urllib.parse
+        if restore_path.startswith("file:///"):
+            restore_path = restore_path[8:]
+        restore_path = os.path.normpath(urllib.parse.unquote(restore_path))
+
         restored_count = 0
         for recycle_name in recycle_names:
             if recycle_name not in self.deleted_files_map:
