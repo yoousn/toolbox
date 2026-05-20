@@ -288,24 +288,25 @@ Rectangle {
         color: "#E6F5F6F8"
 
         // 镜像延迟数据
-        property var mirrorData: []
         property string selectedUrl: ""
         property bool latencyTesting: false
 
+        // 用 ListModel 代替 JS 数组(ListView 对 JS 数组兼容性差)
+        ListModel {
+            id: mirrorModel
+        }
+
         Component.onCompleted: {
             if (!modelReady) {
-                // 直接硬编码镜像列表,不依赖 JSON.parse(兼容所有 Qt 版本)
-                mirrorData = [
-                    { id: "github",      name: "GitHub 官方",   url: "https://github.com/danielgatis/rembg/releases/download/v0.0.0/u2net.onnx",                                          latency: -2 },
-                    { id: "ghproxy",     name: "GHProxy 加速",   url: "https://mirror.ghproxy.com/https://github.com/danielgatis/rembg/releases/download/v0.0.0/u2net.onnx",             latency: -2 },
-                    { id: "huggingface", name: "HuggingFace",    url: "https://huggingface.co/BritishWerewolf/U-2-Net/resolve/main/u2net.onnx",                                           latency: -2 },
-                    { id: "sourceforge", name: "SourceForge",    url: "https://sourceforge.net/projects/bgremover-app/files/u2net/u2net.onnx/download",                                  latency: -2 }
-                ]
+                // 立即填充镜像列表(延迟值 -2 表示等待测速)
+                mirrorModel.append({ mId: "github",      mName: "GitHub 官方",   mUrl: "https://github.com/danielgatis/rembg/releases/download/v0.0.0/u2net.onnx",                                          mLatency: -2 })
+                mirrorModel.append({ mId: "ghproxy",     mName: "GHProxy 加速",   mUrl: "https://mirror.ghproxy.com/https://github.com/danielgatis/rembg/releases/download/v0.0.0/u2net.onnx",             mLatency: -2 })
+                mirrorModel.append({ mId: "huggingface", mName: "HuggingFace",    mUrl: "https://huggingface.co/BritishWerewolf/U-2-Net/resolve/main/u2net.onnx",                                           mLatency: -2 })
+                mirrorModel.append({ mId: "sourceforge", mName: "SourceForge",    mUrl: "https://sourceforge.net/projects/bgremover-app/files/u2net/u2net.onnx/download",                                  mLatency: -2 })
 
-                // 然后异步测延迟
+                // 异步测延迟
                 latencyTesting = true
                 modelDownloader.testLatency()
-                // 10秒超时保护:即使测速没返回也不卡死
                 latencyTimeout.start()
             }
         }
@@ -317,12 +318,10 @@ Rectangle {
             onTriggered: {
                 if (latencyTesting) {
                     latencyTesting = false
-                    // 标记未返回的为超时
-                    for (var i = 0; i < mirrorData.length; i++) {
-                        if (mirrorData[i].latency === -2)
-                            mirrorData[i].latency = -1
+                    for (var i = 0; i < mirrorModel.count; i++) {
+                        if (mirrorModel.get(i).mLatency === -2)
+                            mirrorModel.setProperty(i, "mLatency", -1)
                     }
-                    mirrorData = mirrorData
                     autoSelectBest()
                 }
             }
@@ -331,13 +330,15 @@ Rectangle {
         function autoSelectBest() {
             var best = -1
             var bestUrl = ""
-            for (var i = 0; i < mirrorData.length; i++) {
-                if (mirrorData[i].latency > 0 && (best === -1 || mirrorData[i].latency < best)) {
-                    best = mirrorData[i].latency
-                    bestUrl = mirrorData[i].url
+            for (var i = 0; i < mirrorModel.count; i++) {
+                var lat = mirrorModel.get(i).mLatency
+                var url = mirrorModel.get(i).mUrl
+                if (lat > 0 && (best === -1 || lat < best)) {
+                    best = lat
+                    bestUrl = url
                 }
             }
-            if (bestUrl) selectedUrl = bestUrl
+            if (bestUrl !== "") selectedUrl = bestUrl
         }
 
         Connections {
@@ -345,20 +346,17 @@ Rectangle {
             function onLatencyResult(jsonStr) {
                 latencyTimeout.stop()
                 var latencyData = JSON.parse(jsonStr)
-                // 合并延迟数据到现有镜像列表
                 for (var i = 0; i < latencyData.length; i++) {
-                    for (var j = 0; j < mirrorData.length; j++) {
-                        if (mirrorData[j].id === latencyData[i].id) {
-                            mirrorData[j].latency = latencyData[i].latency
-                            mirrorData[j].url = latencyData[i].url
-                            mirrorData[j].name = latencyData[i].name
+                    for (var j = 0; j < mirrorModel.count; j++) {
+                        if (mirrorModel.get(j).mId === latencyData[i].id) {
+                            mirrorModel.setProperty(j, "mLatency", latencyData[i].latency)
+                            mirrorModel.setProperty(j, "mUrl", latencyData[i].url)
+                            mirrorModel.setProperty(j, "mName", latencyData[i].name)
                             break
                         }
                     }
                 }
                 latencyTesting = false
-                // 强制刷新列表
-                mirrorData = mirrorData
                 autoSelectBest()
             }
         }
@@ -419,14 +417,14 @@ Rectangle {
                         anchors.fill: parent
                         anchors.margins: 8
                         spacing: 6
-                        model: mirrorData
+                        model: mirrorModel
 
                         delegate: Rectangle {
                             width: ListView.view.width
                             height: 42
                             radius: 6
-                            color: selectedUrl === modelData.url ? "#EAF4FC" : (mirrorHover.containsMouse ? "#F2F2F2" : "#FFFFFF")
-                            border.color: selectedUrl === modelData.url ? "#0078D4" : "#E8E8E8"
+                            color: selectedUrl === mUrl ? "#EAF4FC" : (mirrorHover.containsMouse ? "#F2F2F2" : "#FFFFFF")
+                            border.color: selectedUrl === mUrl ? "#0078D4" : "#E8E8E8"
 
                             RowLayout {
                                 anchors.fill: parent
@@ -437,29 +435,29 @@ Rectangle {
                                 // 选中指示
                                 Rectangle {
                                     width: 16; height: 16; radius: 8
-                                    border.color: selectedUrl === modelData.url ? "#0078D4" : "#CCCCCC"
+                                    border.color: selectedUrl === mUrl ? "#0078D4" : "#CCCCCC"
                                     border.width: 2
                                     color: "transparent"
                                     Rectangle {
                                         anchors.centerIn: parent
                                         width: 8; height: 8; radius: 4
                                         color: "#0078D4"
-                                        visible: selectedUrl === modelData.url
+                                        visible: selectedUrl === mUrl
                                     }
                                 }
 
                                 // 源名称
                                 Label {
-                                    text: modelData.name
+                                    text: mName
                                     font.pixelSize: 13
-                                    font.bold: selectedUrl === modelData.url
+                                    font.bold: selectedUrl === mUrl
                                     color: "#333333"
                                     Layout.preferredWidth: 110
                                 }
 
                                 // 超链接(可手动下载)
                                 Label {
-                                    text: "<a href='" + modelData.url + "'>手动下载</a>"
+                                    text: "<a href='" + mUrl + "'>手动下载</a>"
                                     font.pixelSize: 11
                                     color: "#0078D4"
                                     textFormat: Text.RichText
@@ -467,7 +465,7 @@ Rectangle {
                                     MouseArea {
                                         anchors.fill: parent
                                         cursorShape: Qt.PointingHandCursor
-                                        onClicked: Qt.openUrlExternally(modelData.url)
+                                        onClicked: Qt.openUrlExternally(mUrl)
                                     }
                                 }
 
@@ -476,17 +474,17 @@ Rectangle {
                                 // 延迟显示
                                 Label {
                                     text: {
-                                        if (modelData.latency === -2) return latencyTesting ? "测速中..." : "等待测速..."
-                                        if (modelData.latency < 0) return "超时"
-                                        return modelData.latency + " ms"
+                                        if (mLatency === -2) return latencyTesting ? "测速中..." : "等待测速..."
+                                        if (mLatency < 0) return "超时"
+                                        return mLatency + " ms"
                                     }
                                     font.pixelSize: 12
                                     font.bold: true
                                     color: {
-                                        if (modelData.latency === -2) return "#999999"
-                                        if (modelData.latency < 0) return "#D32F2F"
-                                        if (modelData.latency < 500) return "#388E3C"
-                                        if (modelData.latency < 2000) return "#F57C00"
+                                        if (mLatency === -2) return "#999999"
+                                        if (mLatency < 0) return "#D32F2F"
+                                        if (mLatency < 500) return "#388E3C"
+                                        if (mLatency < 2000) return "#F57C00"
                                         return "#D32F2F"
                                     }
                                 }
@@ -497,7 +495,7 @@ Rectangle {
                                 anchors.fill: parent
                                 hoverEnabled: true
                                 cursorShape: Qt.PointingHandCursor
-                                onClicked: selectedUrl = modelData.url
+                                onClicked: selectedUrl = mUrl
                             }
                         }
                     }
