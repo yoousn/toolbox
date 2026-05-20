@@ -24,7 +24,7 @@ from backends.model_downloader import ModelDownloaderBackend
 from backends.update_checker import UpdateCheckerBackend
 
 
-__version__ = "1.0.0"
+__version__ = "1.0.2"
 GITHUB_REPO = "yoousn/toolbox"
 
 

@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 """
 按需下载大模型/资源文件。
-所有大文件不入 git,首次使用时由本模块下载到本地。
-
-新增模型:在 MODEL_REGISTRY 加一项即可。
+支持多镜像源选择、延迟测试、自动选最优源。
 """
 import hashlib
+import json
+import time
 import urllib.request
 from pathlib import Path
 
@@ -13,70 +13,112 @@ from PySide6.QtCore import QObject, Signal, Slot, QThread, Property
 
 
 # ============================================================
-# 模型清单(单一数据源)
+# 镜像源列表
 # ============================================================
-# url     : 直链下载地址(必须是无需鉴权的公开链接)
-# path    : 相对程序根目录的保存路径
-# size_mb : 用于 UI 提示
-# sha256  : 可选,做完整性校验。不填则跳过校验
+MIRROR_SOURCES = [
+    {
+        "id": "github",
+        "name": "GitHub 官方",
+        "url": "https://github.com/danielgatis/rembg/releases/download/v0.0.0/u2net.onnx",
+    },
+    {
+        "id": "ghproxy",
+        "name": "GHProxy 加速",
+        "url": "https://mirror.ghproxy.com/https://github.com/danielgatis/rembg/releases/download/v0.0.0/u2net.onnx",
+    },
+    {
+        "id": "huggingface",
+        "name": "HuggingFace",
+        "url": "https://huggingface.co/BritishWerewolf/U-2-Net/resolve/main/u2net.onnx",
+    },
+    {
+        "id": "sourceforge",
+        "name": "SourceForge",
+        "url": "https://sourceforge.net/projects/bgremover-app/files/u2net/u2net.onnx/download",
+    },
+]
+
+
+# ============================================================
+# 模型清单
 # ============================================================
 MODEL_REGISTRY = {
     "u2net": {
-        "url": "https://github.com/danielgatis/rembg/releases/download/v0.0.0/u2net.onnx",
         "path": ".u2net/u2net.onnx",
         "size_mb": 168,
-        "sha256": "",  # 留空 = 不校验。如需严格校验,本地算好填进来
+        "sha256": "",
     },
-    # 以后加新模型:
-    # "yolov8n": {
-    #     "url": "...",
-    #     "path": "models/yolov8n.onnx",
-    #     "size_mb": 12,
-    #     "sha256": "",
-    # },
 }
 
 
-class _DownloadWorker(QThread):
-    progress = Signal(int, str)   # 百分比 0-100, 状态文字
-    finished_ok = Signal(str)     # 文件保存路径
-    failed = Signal(str)          # 错误信息
+# ============================================================
+# 延迟测试线程
+# ============================================================
+class _LatencyWorker(QThread):
+    """测试所有镜像源的响应延迟。"""
+    result = Signal(str)  # JSON: [{"id": "...", "latency": 123}, ...]
 
-    def __init__(self, model_id: str, app_dir: Path):
+    def run(self):
+        results = []
+        for src in MIRROR_SOURCES:
+            latency = self._ping(src["url"])
+            results.append({
+                "id": src["id"],
+                "name": src["name"],
+                "url": src["url"],
+                "latency": latency,  # -1 表示超时/不可用
+            })
+        self.result.emit(json.dumps(results, ensure_ascii=False))
+
+    @staticmethod
+    def _ping(url: str) -> int:
+        """发 HEAD 请求测延迟(ms),超时返回 -1"""
+        try:
+            req = urllib.request.Request(url, method="HEAD")
+            req.add_header("User-Agent", "Toolbox-LatencyTest/1.0")
+            start = time.time()
+            with urllib.request.urlopen(req, timeout=8):
+                pass
+            return int((time.time() - start) * 1000)
+        except Exception:
+            return -1
+
+
+# ============================================================
+# 下载线程
+# ============================================================
+class _DownloadWorker(QThread):
+    progress = Signal(int, str)
+    finished_ok = Signal(str)
+    failed = Signal(str)
+
+    def __init__(self, url: str, target: Path, sha256: str = ""):
         super().__init__()
-        self.model_id = model_id
-        self.app_dir = app_dir
+        self.url = url
+        self.target = target
+        self.sha256 = sha256
         self._cancel = False
 
     def cancel(self):
         self._cancel = True
 
     def run(self):
-        info = MODEL_REGISTRY.get(self.model_id)
-        if not info:
-            self.failed.emit(f"未知模型: {self.model_id}")
-            return
-
-        target = self.app_dir / info["path"]
-        target.parent.mkdir(parents=True, exist_ok=True)
-        tmp = target.with_suffix(target.suffix + ".part")
+        self.target.parent.mkdir(parents=True, exist_ok=True)
+        tmp = self.target.with_suffix(self.target.suffix + ".part")
 
         try:
-            import time
-
             req = urllib.request.Request(
-                info["url"],
+                self.url,
                 headers={"User-Agent": "Toolbox-ModelDownloader/1.0"},
             )
             with urllib.request.urlopen(req, timeout=30) as resp:
                 total = int(resp.headers.get("Content-Length", 0))
                 downloaded = 0
-                chunk_size = 1024 * 256  # 256 KB
+                chunk_size = 1024 * 256
 
-                start_ts = time.time()
-                last_emit_ts = start_ts
+                last_emit_ts = time.time()
                 last_emit_bytes = 0
-                speed_bps = 0.0  # bytes per second(滑动窗口)
+                speed_bps = 0.0
 
                 with open(tmp, "wb") as f:
                     while True:
@@ -91,12 +133,10 @@ class _DownloadWorker(QThread):
                         downloaded += len(buf)
 
                         now = time.time()
-                        # 至少 0.3s 推送一次状态,避免刷爆主线程
                         if now - last_emit_ts >= 0.3:
                             delta_t = now - last_emit_ts
                             delta_b = downloaded - last_emit_bytes
                             inst_speed = delta_b / delta_t if delta_t > 0 else 0
-                            # 平滑一下,避免数字跳得太厉害
                             speed_bps = (
                                 inst_speed if speed_bps == 0
                                 else 0.3 * inst_speed + 0.7 * speed_bps
@@ -121,18 +161,15 @@ class _DownloadWorker(QThread):
                                 )
 
             # 校验
-            expected = info.get("sha256")
-            if expected:
-                actual = self._sha256(tmp)
-                if actual.lower() != expected.lower():
+            if self.sha256:
+                actual = self._sha256_file(tmp)
+                if actual.lower() != self.sha256.lower():
                     tmp.unlink(missing_ok=True)
-                    self.failed.emit(
-                        f"校验失败,文件可能损坏。\n期望 {expected}\n实际 {actual}"
-                    )
+                    self.failed.emit(f"校验失败,文件可能损坏")
                     return
 
-            tmp.replace(target)  # 原子替换,中途断网不会留半截文件
-            self.finished_ok.emit(str(target))
+            tmp.replace(self.target)
+            self.finished_ok.emit(str(self.target))
         except Exception as e:
             tmp.unlink(missing_ok=True)
             if self._cancel:
@@ -141,7 +178,7 @@ class _DownloadWorker(QThread):
                 self.failed.emit(f"下载失败: {e}")
 
     @staticmethod
-    def _sha256(path: Path) -> str:
+    def _sha256_file(path: Path) -> str:
         h = hashlib.sha256()
         with open(path, "rb") as f:
             for chunk in iter(lambda: f.read(1024 * 1024), b""):
@@ -149,17 +186,21 @@ class _DownloadWorker(QThread):
         return h.hexdigest()
 
 
+# ============================================================
+# 暴露给 QML 的后端
+# ============================================================
 class ModelDownloaderBackend(QObject):
-    """暴露给 QML 用的下载器。"""
     progressChanged = Signal(int, str)
     succeeded = Signal(str, str)        # model_id, path
     failedSig = Signal(str, str)        # model_id, error
     busyChanged = Signal()
+    latencyResult = Signal(str)         # JSON 数组
 
     def __init__(self, app_dir: str):
         super().__init__()
         self._app_dir = Path(app_dir)
         self._worker: _DownloadWorker | None = None
+        self._latency_worker: _LatencyWorker | None = None
         self._current_model = ""
 
     @Property(bool, notify=busyChanged)
@@ -178,16 +219,35 @@ class ModelDownloaderBackend(QObject):
         info = MODEL_REGISTRY.get(model_id)
         return int(info["size_mb"]) if info else 0
 
-    @Slot(str)
-    def download(self, model_id: str):
+    @Slot(result=str)
+    def getMirrors(self) -> str:
+        """返回镜像源列表 JSON"""
+        return json.dumps(MIRROR_SOURCES, ensure_ascii=False)
+
+    @Slot()
+    def testLatency(self):
+        """测试所有镜像源延迟"""
+        if self._latency_worker and self._latency_worker.isRunning():
+            return
+        self._latency_worker = _LatencyWorker()
+        self._latency_worker.result.connect(self.latencyResult)
+        self._latency_worker.start()
+
+    @Slot(str, str)
+    def downloadFromMirror(self, model_id: str, mirror_url: str):
+        """从指定镜像下载模型"""
         if self._worker and self._worker.isRunning():
             return
-        if model_id not in MODEL_REGISTRY:
+        info = MODEL_REGISTRY.get(model_id)
+        if not info:
             self.failedSig.emit(model_id, f"未知模型: {model_id}")
             return
 
         self._current_model = model_id
-        self._worker = _DownloadWorker(model_id, self._app_dir)
+        target = self._app_dir / info["path"]
+        sha256 = info.get("sha256", "")
+
+        self._worker = _DownloadWorker(mirror_url, target, sha256)
         self._worker.progress.connect(self.progressChanged)
         self._worker.finished_ok.connect(
             lambda p, m=model_id: self.succeeded.emit(m, p)
@@ -199,14 +259,31 @@ class ModelDownloaderBackend(QObject):
         self._worker.start()
         self.busyChanged.emit()
 
+    @Slot(str)
+    def download(self, model_id: str):
+        """兼容旧接口:用默认源下载"""
+        info = MODEL_REGISTRY.get(model_id)
+        if not info:
+            self.failedSig.emit(model_id, f"未知模型: {model_id}")
+            return
+        self.downloadFromMirror(model_id, MIRROR_SOURCES[0]["url"])
+
     @Slot()
     def cancel(self):
         if self._worker and self._worker.isRunning():
             self._worker.cancel()
 
+    @Slot(str, result=str)
+    def getModelDir(self, model_id: str) -> str:
+        """返回模型应放置的目录路径(供用户手动放置参考)"""
+        info = MODEL_REGISTRY.get(model_id)
+        if not info:
+            return ""
+        target = self._app_dir / info["path"]
+        return str(target.parent)
+
 
 def _fmt_speed(bps: float) -> str:
-    """字节/秒 → 人类可读"""
     if bps <= 0:
         return "-- KB/s"
     if bps < 1024 * 1024:
@@ -215,7 +292,6 @@ def _fmt_speed(bps: float) -> str:
 
 
 def _fmt_eta(seconds: float) -> str:
-    """秒数 → 'mm:ss' 或 'h:mm:ss'"""
     if seconds < 0 or seconds > 3600 * 24:
         return "--"
     seconds = int(seconds)

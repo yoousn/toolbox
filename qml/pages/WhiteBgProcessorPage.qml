@@ -287,33 +287,189 @@ Rectangle {
         visible: !modelReady
         color: "#E6F5F6F8"
 
+        // 镜像延迟数据
+        property var mirrorData: []
+        property string selectedUrl: ""
+        property bool latencyTesting: false
+
+        Component.onCompleted: {
+            // 进入页面时自动测延迟
+            if (!modelReady) {
+                latencyTesting = true
+                modelDownloader.testLatency()
+            }
+        }
+
+        Connections {
+            target: modelDownloader
+            function onLatencyResult(jsonStr) {
+                var data = JSON.parse(jsonStr)
+                mirrorData = data
+                latencyTesting = false
+
+                // 自动选择延迟最低的可用源
+                var best = -1
+                var bestUrl = ""
+                for (var i = 0; i < data.length; i++) {
+                    if (data[i].latency > 0 && (best === -1 || data[i].latency < best)) {
+                        best = data[i].latency
+                        bestUrl = data[i].url
+                    }
+                }
+                if (bestUrl) selectedUrl = bestUrl
+            }
+        }
+
         Rectangle {
             anchors.centerIn: parent
-            width: 480
-            height: 260
+            width: 580
+            height: 480
             radius: 10
             color: "#FFFFFF"
             border.color: "#E0E0E0"
 
             ColumnLayout {
                 anchors.fill: parent
-                anchors.margins: 24
-                spacing: 14
+                anchors.margins: 20
+                spacing: 10
+
+                // 标题行
+                RowLayout {
+                    Layout.fillWidth: true
+                    Label {
+                        text: "🖼️ 智能白底图 - 首次使用需下载模型"
+                        font.pixelSize: 16
+                        font.bold: true
+                        color: "#0078D4"
+                        Layout.fillWidth: true
+                    }
+                    ModernButton {
+                        text: latencyTesting ? "⏳ 测速中..." : "🔄 刷新延迟"
+                        implicitHeight: 30
+                        implicitWidth: 100
+                        enabled: !latencyTesting
+                        onClicked: {
+                            latencyTesting = true
+                            modelDownloader.testLatency()
+                        }
+                    }
+                }
 
                 Label {
-                    text: "🖼️ 智能白底图 - 首次使用需下载模型"
-                    font.pixelSize: 18
-                    font.bold: true
-                    color: "#0078D4"
-                }
-                Label {
-                    text: "u2net 模型(约 " + modelDownloader.expectedSizeMb("u2net") + " MB),只需下载一次,后续自动使用本地文件。"
+                    text: "u2net 模型(约 " + modelDownloader.expectedSizeMb("u2net") + " MB),选择下载源后点击下载,或点击链接手动下载放入目录。"
                     color: "#555555"
-                    font.pixelSize: 13
+                    font.pixelSize: 12
                     wrapMode: Text.WordWrap
                     Layout.fillWidth: true
                 }
 
+                // 镜像源列表
+                Rectangle {
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    radius: 6
+                    border.color: "#E0E0E0"
+                    color: "#FAFAFA"
+                    clip: true
+
+                    ListView {
+                        anchors.fill: parent
+                        anchors.margins: 8
+                        spacing: 6
+                        model: mirrorData
+
+                        delegate: Rectangle {
+                            width: ListView.view.width
+                            height: 42
+                            radius: 6
+                            color: selectedUrl === modelData.url ? "#EAF4FC" : (mirrorHover.containsMouse ? "#F2F2F2" : "#FFFFFF")
+                            border.color: selectedUrl === modelData.url ? "#0078D4" : "#E8E8E8"
+
+                            RowLayout {
+                                anchors.fill: parent
+                                anchors.leftMargin: 12
+                                anchors.rightMargin: 12
+                                spacing: 10
+
+                                // 选中指示
+                                Rectangle {
+                                    width: 16; height: 16; radius: 8
+                                    border.color: selectedUrl === modelData.url ? "#0078D4" : "#CCCCCC"
+                                    border.width: 2
+                                    color: "transparent"
+                                    Rectangle {
+                                        anchors.centerIn: parent
+                                        width: 8; height: 8; radius: 4
+                                        color: "#0078D4"
+                                        visible: selectedUrl === modelData.url
+                                    }
+                                }
+
+                                // 源名称
+                                Label {
+                                    text: modelData.name
+                                    font.pixelSize: 13
+                                    font.bold: selectedUrl === modelData.url
+                                    color: "#333333"
+                                    Layout.preferredWidth: 110
+                                }
+
+                                // 超链接(可手动下载)
+                                Label {
+                                    text: "<a href='" + modelData.url + "'>手动下载</a>"
+                                    font.pixelSize: 11
+                                    color: "#0078D4"
+                                    textFormat: Text.RichText
+                                    onLinkActivated: function(link) { Qt.openUrlExternally(link) }
+                                    MouseArea {
+                                        anchors.fill: parent
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: Qt.openUrlExternally(modelData.url)
+                                    }
+                                }
+
+                                Item { Layout.fillWidth: true }
+
+                                // 延迟显示
+                                Label {
+                                    text: {
+                                        if (latencyTesting) return "测速中..."
+                                        if (modelData.latency < 0) return "超时"
+                                        return modelData.latency + " ms"
+                                    }
+                                    font.pixelSize: 12
+                                    font.bold: true
+                                    color: {
+                                        if (latencyTesting) return "#999999"
+                                        if (modelData.latency < 0) return "#D32F2F"
+                                        if (modelData.latency < 500) return "#388E3C"
+                                        if (modelData.latency < 2000) return "#F57C00"
+                                        return "#D32F2F"
+                                    }
+                                }
+                            }
+
+                            MouseArea {
+                                id: mirrorHover
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: selectedUrl = modelData.url
+                            }
+                        }
+                    }
+                }
+
+                // 手动放置提示
+                Label {
+                    text: "💡 也可手动下载后放入: " + modelDownloader.getModelDir("u2net")
+                    color: "#888888"
+                    font.pixelSize: 11
+                    wrapMode: Text.WordWrap
+                    Layout.fillWidth: true
+                }
+
+                // 进度条
                 ProgressBar {
                     id: dlBar
                     Layout.fillWidth: true
@@ -325,15 +481,14 @@ Rectangle {
                 }
                 Label {
                     id: dlStatus
-                    text: "等待开始"
+                    text: "选择下载源后点击下载"
                     color: "#888888"
                     font.pixelSize: 12
                     Layout.fillWidth: true
                     elide: Text.ElideRight
                 }
 
-                Item { Layout.fillHeight: true }
-
+                // 按钮行
                 RowLayout {
                     Layout.fillWidth: true
                     spacing: 10
@@ -341,32 +496,23 @@ Rectangle {
                     ModernButton {
                         id: dlBtn
                         Layout.fillWidth: true
-                        implicitHeight: 40
-                        text: modelDownloader.busy ? "📥 下载中..." : "📥 下载模型"
-                        enabled: !modelDownloader.busy
+                        implicitHeight: 38
+                        text: modelDownloader.busy ? "📥 下载中..." : "📥 开始下载"
+                        enabled: !modelDownloader.busy && selectedUrl !== ""
                         onClicked: {
-                            dlStatus.color = "#888888"
+                            dlStatus.color = "#555555"
                             dlStatus.text = "连接中..."
                             dlBar.value = 0
-                            modelDownloader.download("u2net")
+                            modelDownloader.downloadFromMirror("u2net", selectedUrl)
                         }
                     }
                     ModernButton {
-                        id: cancelBtn
-                        implicitHeight: 40
-                        implicitWidth: 100
+                        implicitHeight: 38
+                        implicitWidth: 80
                         visible: modelDownloader.busy
                         text: "取消"
                         onClicked: modelDownloader.cancel()
                     }
-                }
-
-                Label {
-                    text: "国内访问 GitHub 较慢属正常现象,实在太慢可取消后稍后重试"
-                    color: "#AAAAAA"
-                    font.pixelSize: 11
-                    Layout.fillWidth: true
-                    horizontalAlignment: Text.AlignHCenter
                 }
             }
         }
