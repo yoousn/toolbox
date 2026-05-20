@@ -293,30 +293,73 @@ Rectangle {
         property bool latencyTesting: false
 
         Component.onCompleted: {
-            // 进入页面时自动测延迟
             if (!modelReady) {
+                // 先立刻加载镜像列表(无延迟数据,保证界面有内容)
+                var mirrorsJson = modelDownloader.getMirrors()
+                var mirrors = JSON.parse(mirrorsJson)
+                for (var i = 0; i < mirrors.length; i++) {
+                    mirrors[i].latency = -2 //  -2 表示等待测速
+                }
+                mirrorData = mirrors
+
+                // 然后异步测延迟
                 latencyTesting = true
                 modelDownloader.testLatency()
+                // 10秒超时保护:即使测速没返回也不卡死
+                latencyTimeout.start()
             }
+        }
+
+        Timer {
+            id: latencyTimeout
+            interval: 10000
+            repeat: false
+            onTriggered: {
+                if (latencyTesting) {
+                    latencyTesting = false
+                    // 标记未返回的为超时
+                    for (var i = 0; i < mirrorData.length; i++) {
+                        if (mirrorData[i].latency === -2)
+                            mirrorData[i].latency = -1
+                    }
+                    mirrorData = mirrorData
+                    autoSelectBest()
+                }
+            }
+        }
+
+        function autoSelectBest() {
+            var best = -1
+            var bestUrl = ""
+            for (var i = 0; i < mirrorData.length; i++) {
+                if (mirrorData[i].latency > 0 && (best === -1 || mirrorData[i].latency < best)) {
+                    best = mirrorData[i].latency
+                    bestUrl = mirrorData[i].url
+                }
+            }
+            if (bestUrl) selectedUrl = bestUrl
         }
 
         Connections {
             target: modelDownloader
             function onLatencyResult(jsonStr) {
-                var data = JSON.parse(jsonStr)
-                mirrorData = data
-                latencyTesting = false
-
-                // 自动选择延迟最低的可用源
-                var best = -1
-                var bestUrl = ""
-                for (var i = 0; i < data.length; i++) {
-                    if (data[i].latency > 0 && (best === -1 || data[i].latency < best)) {
-                        best = data[i].latency
-                        bestUrl = data[i].url
+                latencyTimeout.stop()
+                var latencyData = JSON.parse(jsonStr)
+                // 合并延迟数据到现有镜像列表
+                for (var i = 0; i < latencyData.length; i++) {
+                    for (var j = 0; j < mirrorData.length; j++) {
+                        if (mirrorData[j].id === latencyData[i].id) {
+                            mirrorData[j].latency = latencyData[i].latency
+                            mirrorData[j].url = latencyData[i].url
+                            mirrorData[j].name = latencyData[i].name
+                            break
+                        }
                     }
                 }
-                if (bestUrl) selectedUrl = bestUrl
+                latencyTesting = false
+                // 强制刷新列表
+                mirrorData = mirrorData
+                autoSelectBest()
             }
         }
 
@@ -433,14 +476,14 @@ Rectangle {
                                 // 延迟显示
                                 Label {
                                     text: {
-                                        if (latencyTesting) return "测速中..."
+                                        if (modelData.latency === -2) return latencyTesting ? "测速中..." : "等待测速..."
                                         if (modelData.latency < 0) return "超时"
                                         return modelData.latency + " ms"
                                     }
                                     font.pixelSize: 12
                                     font.bold: true
                                     color: {
-                                        if (latencyTesting) return "#999999"
+                                        if (modelData.latency === -2) return "#999999"
                                         if (modelData.latency < 0) return "#D32F2F"
                                         if (modelData.latency < 500) return "#388E3C"
                                         if (modelData.latency < 2000) return "#F57C00"

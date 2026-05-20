@@ -127,15 +127,34 @@ class _DownloadUpdateWorker(QThread):
                             else:
                                 self.progress.emit(0, f"已下载 {mb_done:.1f} MB")
 
-            # 解压
+            # 解压(带路径穿越防护)
             self.progress.emit(100, "解压中...")
             extract_dir = tmp_dir / "extracted"
             if extract_dir.exists():
                 import shutil
                 shutil.rmtree(extract_dir, ignore_errors=True)
+            extract_dir.mkdir(parents=True, exist_ok=True)
 
             with zipfile.ZipFile(zip_path, "r") as zf:
-                zf.extractall(extract_dir)
+                for member in zf.infolist():
+                    # 防 ZIP Slip:禁止绝对路径和 "../" 穿越
+                    member_path = os.path.normpath(member.filename)
+                    if os.path.isabs(member_path) or member_path.startswith(".."):
+                        self.progress.emit(100, f"跳过可疑路径: {member.filename}")
+                        continue
+                    target = extract_dir / member_path
+                    # 二次确认不越界
+                    try:
+                        target.resolve().relative_to(extract_dir.resolve())
+                    except ValueError:
+                        self.progress.emit(100, f"跳过越界路径: {member.filename}")
+                        continue
+                    if member.is_dir():
+                        target.mkdir(parents=True, exist_ok=True)
+                    else:
+                        target.parent.mkdir(parents=True, exist_ok=True)
+                        with zf.open(member) as src, open(target, "wb") as dst:
+                            dst.write(src.read())
 
             zip_path.unlink(missing_ok=True)
             self.finished_ok.emit(str(extract_dir))

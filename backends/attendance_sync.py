@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import os
 import re
 import random
 from datetime import datetime
@@ -20,7 +21,8 @@ class AttendanceSyncWorker(QThread):
             import xlwings as xw
 
             file_path = self.file_path
-            password = "AAAABBAABBBO"
+            # 密码从环境变量读取,避免硬编码泄露
+            password = os.environ.get("TOOLBOX_EXCEL_PWD", "")
 
             self.logSignal.emit("正在启动考勤 5.0 终极同步流程...")
 

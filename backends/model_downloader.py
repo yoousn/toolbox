@@ -46,7 +46,8 @@ MODEL_REGISTRY = {
     "u2net": {
         "path": ".u2net/u2net.onnx",
         "size_mb": 168,
-        "sha256": "",
+        # SHA256 from rembg v0.0.0 release, enables integrity verification
+        "sha256": "dcbb85cce16dc718fa2c762294e5989c212076845d44495a57e2d33aad3ad132",
     },
 }
 
