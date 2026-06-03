@@ -43,7 +43,14 @@ class _CheckWorker(QThread):
                 self.no_update.emit()
                 return
 
-            if _normalize(latest) == _normalize(self.current_version):
+            try:
+                latest_t = _version_tuple(_normalize(latest))
+                current_t = _version_tuple(_normalize(self.current_version))
+            except Exception:
+                self.no_update.emit()
+                return
+
+            if latest_t <= current_t:
                 self.no_update.emit()
                 return
 
@@ -168,6 +175,11 @@ class _DownloadUpdateWorker(QThread):
 
 def _normalize(v: str) -> str:
     return v.lstrip("vV").strip()
+
+
+def _version_tuple(v: str) -> tuple:
+    """将版本号字符串转为整数元组以支持正确比较，如 '1.10.0' > '1.9.0'"""
+    return tuple(int(x) for x in v.split("."))
 
 
 def _fmt_speed(bps: float) -> str:

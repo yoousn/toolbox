@@ -6,7 +6,7 @@ import QtQuick.Dialogs
 
 Rectangle {
     color: "#F5F6F8"
-    property var entryTexts: ["", "", "", "", ""]
+    ListModel { id: entryModel; Component.onCompleted: { for(var i=0; i<5; i++) append({"value": ""}) } }
 
     FolderDialog {
         id: folderDlg
@@ -24,8 +24,11 @@ Rectangle {
     function getFilenames() {
         var names = []
         for (var i = 0; i < entryRepeater.count; i++) {
-            var t = entryRepeater.itemAt(i).children[0].children[0].text.trim()
-            if (t) names.push(t)
+            var item = entryRepeater.itemAt(i)
+            if (item && item.inputValue) {
+                var t = item.inputValue.trim()
+                if (t) names.push(t)
+            }
         }
         return names
     }
@@ -83,7 +86,7 @@ Rectangle {
                     ModernButton {
                         text: "+"
                         implicitHeight: 30; implicitWidth: 40
-                        onClicked: { entryTexts.push(""); entryRepeater.model = entryTexts.length }
+                        onClicked: { entryModel.append({"value": ""}) }
                         
                         
                     }
@@ -93,12 +96,22 @@ Rectangle {
                     ColumnLayout {
                         id: entryCol; width: parent.width; spacing: 8
                         Repeater {
-                            id: entryRepeater; model: entryTexts.length
-                            Rectangle {
-                                Layout.fillWidth: true; height: 34; radius: 4; color: "#FFFFFF"; border.color: "#CCCCCC"
-                                TextInput {
-                                    anchors.fill: parent; anchors.leftMargin: 10; anchors.rightMargin: 10; verticalAlignment: TextInput.AlignVCenter
-                                    color: "#333333"; font.pixelSize: 13; text: ""
+                            id: entryRepeater; model: entryModel
+                            RowLayout {
+                                property alias inputValue: inputField.text
+                                Layout.fillWidth: true; height: 34
+                                Rectangle {
+                                    Layout.fillWidth: true; Layout.fillHeight: true; radius: 4; color: "#FFFFFF"; border.color: "#CCCCCC"
+                                    TextInput {
+                                        id: inputField
+                                        anchors.fill: parent; anchors.leftMargin: 10; anchors.rightMargin: 10; verticalAlignment: TextInput.AlignVCenter
+                                        color: "#333333"; font.pixelSize: 13; text: model.value
+                                    }
+                                }
+                                Rectangle {
+                                    width: 34; height: 34; radius: 4; color: "#FFF0F0"; border.color: "#FFCDD2"
+                                    Label { anchors.centerIn: parent; text: "X"; color: "#D32F2F"; font.bold: true }
+                                    MouseArea { anchors.fill: parent; onClicked: entryModel.remove(index) }
                                 }
                             }
                         }

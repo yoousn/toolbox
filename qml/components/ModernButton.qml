@@ -11,8 +11,8 @@ Button {
     property string shadowColor: Qt.darker(bgColor, 1.2)
 
     background: Item {
-        implicitHeight: control.implicitHeight || 40
-        implicitWidth: control.implicitWidth || 120
+        implicitHeight: 40
+        implicitWidth: 120
         
         Rectangle {
             id: shadowRect

@@ -11,7 +11,11 @@ def replace_text_and_save(image_path, text, output_folder):
         image = Image.open(image_path)
         draw = ImageDraw.Draw(image)
 
-        font_path = "simsun.ttc"
+        # 使用系统字体绝对路径，避免 PyInstaller 打包后找不到
+        win_fonts = os.path.join(os.environ.get("WINDIR", r"C:\Windows"), "Fonts")
+        font_path = os.path.join(win_fonts, "simsun.ttc")
+        if not os.path.exists(font_path):
+            font_path = os.path.join(win_fonts, "msyh.ttc")
         font_size = 20
         font = ImageFont.truetype(font_path, font_size)
 

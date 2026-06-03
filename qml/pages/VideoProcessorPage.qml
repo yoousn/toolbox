@@ -7,6 +7,10 @@ import QtQuick.Dialogs
 Rectangle {
     color: "#F5F6F8"
 
+    // 扫描完成后启用清理按钮
+    property bool scanDone: false
+    property string scanInfo: ""
+
     FolderDialog { 
         id: dirDialog
         title: "选择目标目录"
@@ -24,14 +28,21 @@ Rectangle {
             var b = videoProcessor.isBusy()
             btnAnalyze.enabled = !b
             btnRename.enabled = !b
-            btnCopy.enabled = !b 
+            btnCopy.enabled = !b
+            btnScan.enabled = !b
+            btnCleanup.enabled = !b && scanDone
+        }
+        function onScanSummary(count, sizeStr) {
+            scanDone = true
+            scanInfo = count + " 个文件, " + sizeStr
+            btnCleanup.enabled = true
         }
     }
 
     ColumnLayout {
         anchors.fill: parent
         anchors.margins: 15
-        spacing: 20
+        spacing: 15
 
         Label { text: "🎬 视频批量处理专家"; color: "#333333"; font.pixelSize: 22; font.bold: true }
 
@@ -66,8 +77,6 @@ Rectangle {
                         text: "浏览"
                         implicitHeight: 34; implicitWidth: 80
                         onClicked: dirDialog.open()
-                        
-                        
                     }
                 }
 
@@ -78,14 +87,12 @@ Rectangle {
                         id: formatCombo
                         model: ["MOV", "MP4"]
                         implicitWidth: 120; implicitHeight: 34
-                        
-                        
                     }
                 }
             }
         }
 
-        // 按钮区
+        // ===== 原有功能按钮 =====
         RowLayout {
             Layout.fillWidth: true
             spacing: 15
@@ -94,22 +101,67 @@ Rectangle {
                 id: btnAnalyze
                 Layout.fillWidth: true; implicitHeight: 46; text: "🔍 仅分析检测"
                 onClicked: { logModel.clear(); videoProcessor.startTask(dirInput.text, formatCombo.currentText, "analyze") }
-                
-                
             }
             ModernButton {
                 id: btnRename
                 Layout.fillWidth: true; implicitHeight: 46; text: "✏️ 批量重命名"
                 onClicked: { logModel.clear(); videoProcessor.startTask(dirInput.text, formatCombo.currentText, "rename") }
-                
-                
             }
             ModernButton {
                 id: btnCopy
                 Layout.fillWidth: true; implicitHeight: 46; text: "📋 提取副本到总目录"
                 onClicked: { logModel.clear(); videoProcessor.startTask(dirInput.text, formatCombo.currentText, "copy") }
-                
-                
+            }
+        }
+
+        // ===== 分隔线 =====
+        Rectangle { Layout.fillWidth: true; height: 1; color: "#E0E0E0" }
+
+        // ===== 视频清理区 =====
+        RowLayout {
+            Layout.fillWidth: true
+            spacing: 15
+
+            Label { text: "🗑️ 视频批量清理"; color: "#333333"; font.pixelSize: 14; font.bold: true }
+            Item { Layout.fillWidth: true }
+            Label {
+                text: scanInfo ? ("📊 " + scanInfo) : ""
+                color: "#F57C00"; font.pixelSize: 13; font.bold: true
+            }
+        }
+
+        RowLayout {
+            Layout.fillWidth: true
+            spacing: 15
+
+            ModernButton {
+                id: btnScan
+                Layout.fillWidth: true; implicitHeight: 46; text: "🔍 扫描「所有XXX」文件夹内视频"
+                onClicked: {
+                    logModel.clear()
+                    scanDone = false
+                    scanInfo = ""
+                    statusLabel.text = "扫描中..."
+                    statusLabel.color = "#666666"
+                    progressBar.value = 0
+                    videoProcessor.scanVideos(dirInput.text)
+                }
+            }
+            ModernButton {
+                id: btnCleanup
+                Layout.fillWidth: true; implicitHeight: 46; text: "🗑️ 一键清理至回收站"
+                enabled: scanDone
+                bgColor: enabled ? "#E53935" : "#D0D0D0"
+                hoverColor: "#C62828"
+                pressedColor: "#B71C1C"
+                onClicked: {
+                    logModel.clear()
+                    statusLabel.text = "清理中..."
+                    statusLabel.color = "#666666"
+                    progressBar.value = 0
+                    scanDone = false
+                    videoProcessor.cleanupVideos(dirInput.text)
+                }
             }
         }
 
@@ -152,6 +204,7 @@ Rectangle {
                         font.family: "Consolas"
                         width: ListView.view ? ListView.view.width : 100; wrapMode: Text.Wrap 
                     }
+                    ScrollBar.vertical: ScrollBar { active: true }
                     onCountChanged: positionViewAtEnd()
                 }
             }

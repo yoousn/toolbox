@@ -8,6 +8,8 @@ Rectangle {
     color: "#F5F6F8"
     property var selectedIndependentFiles: []
     property bool modelReady: u2netAvailable
+    property string selectedUrl: ""
+    property bool latencyTesting: false
 
     Connections {
         target: whiteBgProcessor
@@ -286,10 +288,6 @@ Rectangle {
         anchors.fill: parent
         visible: !modelReady
         color: "#E6F5F6F8"
-
-        // 镜像延迟数据
-        property string selectedUrl: ""
-        property bool latencyTesting: false
 
         // 用 ListModel 代替 JS 数组(ListView 对 JS 数组兼容性差)
         ListModel {

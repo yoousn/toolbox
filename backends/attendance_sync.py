@@ -156,7 +156,7 @@ class AttendanceSyncWorker(QThread):
                         state['late_over_20'] += 1
 
                     if shift == 'morning':
-                        out_time = f"16:3{random.randint(1, morning_out_range)}"
+                        out_time = f"16:{30 + random.randint(1, min(morning_out_range, 29)):02d}"
                     elif shift == 'noon':
                         out_time = f"21:{random.randint(1, noon_out_range):02d}"
                     elif shift == 'night':
@@ -242,7 +242,7 @@ class AttendanceSyncWorker(QThread):
             sheet1.api.Protect(password)
             self.logSignal.emit(
                 f"1.【考勤记录】修改完成，已抓取 {len(sync_data)} 组数据。"
-                f"迟到20分: {state['late_over_20']}/5")
+                f"迟到20分: {state['late_over_20']}/{late_limit}")
             if skipped_days:
                 self.logSignal.emit(
                     f"⚠️ 未识别班次，跳过 {len(skipped_days)} 天: "
@@ -361,6 +361,12 @@ class AttendanceSyncWorker(QThread):
 
         except Exception as e:
             self.errorSignal.emit(f"执行过程中遇到错误: {e}")
+        finally:
+            try:
+                if 'wb' in dir() and wb:
+                    wb.close()
+            except Exception:
+                pass
 
 
 class AttendanceSyncBackend(QObject):

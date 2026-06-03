@@ -26,7 +26,7 @@ class ImageFileCheckerBackend(QObject):
         if not folder_path or not os.path.isdir(folder_path):
             self.logMessage.emit("[错误] 请先选择一个有效的目标文件夹！")
             return
-        target_files = [f"{n.strip()}.jpg"
+        target_files = [n.strip() if n.strip().lower().endswith(('.jpg', '.jpeg', '.png')) else f"{n.strip()}.jpg"
                         for n in filenames if n and n.strip()]
         if not target_files:
             self.logMessage.emit("[错误] 请输入至少一个文件名！")
@@ -43,7 +43,7 @@ class ImageFileCheckerBackend(QObject):
         if not folder_path or not os.path.isdir(folder_path):
             self.logMessage.emit("[错误] 请先选择一个有效的目标文件夹！")
             return
-        target_files = [f"{n.strip()}.jpg"
+        target_files = [n.strip() if n.strip().lower().endswith(('.jpg', '.jpeg', '.png')) else f"{n.strip()}.jpg"
                         for n in filenames if n and n.strip()]
         if not target_files:
             self.logMessage.emit("[错误] 请输入至少一个文件名！")
