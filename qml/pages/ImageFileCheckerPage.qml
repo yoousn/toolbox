@@ -11,13 +11,17 @@ Rectangle {
     FolderDialog {
         id: folderDlg
         title: "选择目标文件夹"
-        currentFolder: "file:///D:/1上款"
-        onAccepted: folderInput.text = selectedFolder.toString().replace("file:///", "")
+        currentFolder: imageFileChecker.getDefaultFolder() ? ("file:///" + imageFileChecker.getDefaultFolder().replace(/\\/g, "/")) : "file:///D:/"
+        onAccepted: {
+            folderInput.text = selectedFolder.toString().replace("file:///", "")
+            imageFileChecker.rememberDefaultFolder(folderInput.text)
+        }
     }
 
     FolderDialog {
         id: restoreFolderDlg
         title: "选择恢复目标文件夹"
+        currentFolder: imageFileChecker.getDefaultFolder() ? ("file:///" + imageFileChecker.getDefaultFolder().replace(/\\/g, "/")) : "file:///D:/"
         onAccepted: { imageFileChecker.restoreFiles(getSelectedRecycleNames(), false, selectedFolder.toString().replace("file:///", "")) }
     }
 
@@ -63,7 +67,7 @@ Rectangle {
                 Rectangle {
                     Layout.fillWidth: true; Layout.preferredHeight: 34; radius: 4; border.color: "#CCCCCC"; color: "#FFFFFF"
                     TextInput { 
-                        id: folderInput; anchors.fill: parent; anchors.leftMargin: 8; anchors.rightMargin: 8; verticalAlignment: TextInput.AlignVCenter; color: "#333333"; font.pixelSize: 13; text: "D:\\1上款" 
+                        id: folderInput; anchors.fill: parent; anchors.leftMargin: 8; anchors.rightMargin: 8; verticalAlignment: TextInput.AlignVCenter; color: "#333333"; font.pixelSize: 13; text: imageFileChecker.getDefaultFolder() 
                     }
                 }
                 ModernButton {

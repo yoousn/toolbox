@@ -4,6 +4,8 @@ import shutil
 from datetime import datetime
 from PySide6.QtCore import QObject, Slot, Signal
 
+from .settings_store import settings
+
 
 class ImageFileCheckerBackend(QObject):
     logMessage = Signal(str)
@@ -15,17 +17,27 @@ class ImageFileCheckerBackend(QObject):
             os.path.expanduser("~"), "ImageFileTool_RecycleBin")
         os.makedirs(self.app_recycle_bin, exist_ok=True)
         self.deleted_files_map = {}
+        self._default_folder = settings.get("image_file_checker.default_folder", "D:\\1上款")
+
+    @Slot(result=str)
+    def getDefaultFolder(self):
+        return self._default_folder
+
+    @Slot(str)
+    def rememberDefaultFolder(self, folder_path):
+        folder_path = _clean_path(folder_path)
+        if folder_path:
+            self._default_folder = folder_path
+            settings.set("image_file_checker.default_folder", folder_path)
 
     @Slot(str, list)
     def checkFiles(self, folder_path, filenames):
-        import urllib.parse
-        if folder_path.startswith("file:///"):
-            folder_path = folder_path[8:]
-        folder_path = os.path.normpath(urllib.parse.unquote(folder_path))
+        folder_path = _clean_path(folder_path)
 
         if not folder_path or not os.path.isdir(folder_path):
             self.logMessage.emit("[错误] 请先选择一个有效的目标文件夹！")
             return
+        self.rememberDefaultFolder(folder_path)
         target_files = [n.strip() if n.strip().lower().endswith(('.jpg', '.jpeg', '.png')) else f"{n.strip()}.jpg"
                         for n in filenames if n and n.strip()]
         if not target_files:
@@ -35,14 +47,12 @@ class ImageFileCheckerBackend(QObject):
 
     @Slot(str, list)
     def deleteFiles(self, folder_path, filenames):
-        import urllib.parse
-        if folder_path.startswith("file:///"):
-            folder_path = folder_path[8:]
-        folder_path = os.path.normpath(urllib.parse.unquote(folder_path))
+        folder_path = _clean_path(folder_path)
 
         if not folder_path or not os.path.isdir(folder_path):
             self.logMessage.emit("[错误] 请先选择一个有效的目标文件夹！")
             return
+        self.rememberDefaultFolder(folder_path)
         target_files = [n.strip() if n.strip().lower().endswith(('.jpg', '.jpeg', '.png')) else f"{n.strip()}.jpg"
                         for n in filenames if n and n.strip()]
         if not target_files:
@@ -133,3 +143,11 @@ class ImageFileCheckerBackend(QObject):
                     f"[恢复失败] 无法移动 {recycle_name}: {e}")
 
         self.operationFinished.emit(f"成功恢复 {restored_count} 个文件。")
+
+
+def _clean_path(path: str) -> str:
+    import urllib.parse
+    path = str(path or "")
+    if path.startswith("file:///"):
+        path = path[8:]
+    return os.path.normpath(urllib.parse.unquote(path)) if path else ""

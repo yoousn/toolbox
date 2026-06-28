@@ -5,6 +5,8 @@ import random
 from datetime import datetime
 from PySide6.QtCore import QObject, Slot, Signal, QThread
 
+from .settings_store import settings
+
 
 class AttendanceSyncWorker(QThread):
     logSignal = Signal(str)
@@ -382,12 +384,23 @@ class AttendanceSyncBackend(QObject):
 
     @Slot(result=str)
     def getDefaultFilePath(self):
-        return r"D:\Desktop\1_标准报表.xls"
+        return settings.get("attendance_sync.file_path", r"D:\Desktop\1_标准报表.xls")
+
+    @Slot(str)
+    def rememberFilePath(self, file_path):
+        import urllib.parse
+        file_path = str(file_path or "")
+        if file_path.startswith("file:///"):
+            file_path = file_path[8:]
+        file_path = os.path.normpath(urllib.parse.unquote(file_path)) if file_path else ""
+        if file_path:
+            settings.set("attendance_sync.file_path", file_path)
 
     @Slot(str, str)
     def runSync(self, file_path, settings_json='{}'):
         if self._busy:
             return
+        self.rememberFilePath(file_path)
         self._busy = True
         self.busyChanged.emit()
 

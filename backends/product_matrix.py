@@ -6,6 +6,8 @@ from datetime import datetime
 import pandas as pd
 from PySide6.QtCore import QObject, Slot, Signal
 
+from .settings_store import settings
+
 # ================= 数据映射 (业务核心，原样保留) =================
 SMART_STD_MAPPING = {
     "上衣": "GB/T 22849-2024",
@@ -27,6 +29,7 @@ SIZE_MAPPING = {
     "M-4XL": ["M", "L", "XL", "2XL", "3XL", "4XL"],
     "29-36": ["29", "30", "31", "32", "33", "34", "36"],
     "29-35-36": ["29", "30", "31", "32", "33", "34", "35", "36"],
+    "29-35-38": ["29", "30", "31", "32", "33", "34", "35", "36", "38"],
     "29-38": ["29", "30", "31", "32", "33", "34", "36", "38"]
 }
 
@@ -69,6 +72,9 @@ class ProductMatrixBackend(QObject):
 
     @Slot(result=str)
     def getDefaultExportPath(self):
+        remembered = settings.get("product_matrix.export_path", "")
+        if remembered:
+            return remembered
         try:
             key = winreg.OpenKey(
                 winreg.HKEY_CURRENT_USER,
@@ -137,6 +143,7 @@ class ProductMatrixBackend(QObject):
         if not os.path.isdir(out_path):
             self.generateError.emit("输出目录无效！")
             return
+        settings.set("product_matrix.export_path", out_path)
 
         data_rows = []
         for task in self.task_queue:

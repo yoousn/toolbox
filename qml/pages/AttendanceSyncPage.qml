@@ -112,9 +112,12 @@ Rectangle {
     FileDialog {
         id: excelFileDlg
         title: "选择考勤报表文件"
-        currentFolder: "file:///D:/Desktop"
+        currentFolder: "file:///" + attendanceSync.getDefaultFilePath().replace(/\\/g, "/").split("/").slice(0, -1).join("/")
         nameFilters: ["Excel 文件 (*.xls *.xlsx)"]
-        onAccepted: pathInput.text = selectedFile.toString().replace("file:///", "")
+        onAccepted: {
+            pathInput.text = selectedFile.toString().replace("file:///", "")
+            attendanceSync.rememberFilePath(pathInput.text)
+        }
     }
 
     Connections {
@@ -145,7 +148,7 @@ Rectangle {
                         Layout.fillWidth: true; implicitHeight: 32; radius: 4
                         border.color: "#CCC"; color: "#FFF"
                         TextInput {
-                            id: pathInput; text: "D:\\Desktop\\1_标准报表.xls"
+                            id: pathInput; text: attendanceSync.getDefaultFilePath()
                             anchors.fill: parent; anchors.leftMargin: 8
                             verticalAlignment: TextInput.AlignVCenter
                             color: "#333"; font.pixelSize: 13; clip: true; selectByMouse: true

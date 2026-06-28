@@ -6,18 +6,19 @@ import QtQuick.Dialogs
 
 Rectangle {
     color: "#F5F6F8"
+    property bool backendBusy: false
 
     FileDialog {
         id: imageFileDlg
         title: "选择模板图片"
-        currentFolder: "file:///D:/Desktop/上款"
+        currentFolder: certGenerator.getDefaultImageFolder() ? ("file:///" + certGenerator.getDefaultImageFolder().replace(/\\/g, "/")) : ""
         onAccepted: imageInput.text = selectedFile.toString().replace("file:///", "")
     }
 
     FolderDialog {
         id: rootDirDlg
         title: "选择工作子主目录"
-        currentFolder: certGenerator.getDefaultBrowseFolder() ? ("file:///" + certGenerator.getDefaultBrowseFolder()) : "file:///D:/"
+        currentFolder: certGenerator.getDefaultBrowseFolder() ? ("file:///" + certGenerator.getDefaultBrowseFolder().replace(/\\/g, "/")) : "file:///D:/"
         onAccepted: { 
             rootInput.text = selectedFolder.toString().replace("file:///", "")
             certGenerator.setSelectedFolder(rootInput.text)
@@ -27,6 +28,7 @@ Rectangle {
     Connections {
         target: certGenerator
         function onLogMessage(msg) { logModel.append({"text": msg}) }
+        function onBusyChanged() { backendBusy = certGenerator.isBusy() }
         function onGenerateFinished(success, fail) { 
             statusLabel.text = "完成: 成功 " + success + " 个，失败 " + fail + " 个"; 
             statusLabel.color = fail > 0 ? "#D32F2F" : "#107C41" 
@@ -136,7 +138,9 @@ Rectangle {
         }
 
         ModernButton {
-            Layout.fillWidth: true; implicitHeight: 46; text: "🚀 批 量 生 成"
+            id: btnGenerate
+            Layout.fillWidth: true; implicitHeight: 46; text: backendBusy ? "生成中..." : "🚀 批 量 生 成"
+            enabled: !backendBusy
             onClicked: { 
                 logModel.clear()
                 statusLabel.text = "生成中..."

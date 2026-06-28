@@ -14,8 +14,11 @@ Rectangle {
     FolderDialog { 
         id: dirDialog
         title: "选择目标目录"
-        currentFolder: "file:///D:/1上款"
-        onAccepted: dirInput.text = selectedFolder.toString().replace("file:///", "") 
+        currentFolder: videoProcessor.getDefaultDir() ? ("file:///" + videoProcessor.getDefaultDir().replace(/\\/g, "/")) : ""
+        onAccepted: {
+            dirInput.text = selectedFolder.toString().replace("file:///", "")
+            videoProcessor.rememberDefaultDir(dirInput.text)
+        }
     }
 
     Connections {
@@ -70,7 +73,7 @@ Rectangle {
                         border.color: "#CCCCCC"
                         TextInput {
                             id: dirInput; anchors.fill: parent; anchors.leftMargin: 8; anchors.rightMargin: 8; verticalAlignment: TextInput.AlignVCenter
-                            text: "D:\\1上款"; color: "#333333"; font.pixelSize: 13
+                            text: videoProcessor.getDefaultDir(); color: "#333333"; font.pixelSize: 13
                         }
                     }
                     ModernButton {

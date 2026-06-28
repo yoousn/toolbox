@@ -1,8 +1,10 @@
 # -*- coding: utf-8 -*-
 import os
 import re
-from PySide6.QtCore import QObject, Slot, Signal
+from PySide6.QtCore import QObject, Slot, Signal, QThread
 from PIL import Image, ImageDraw, ImageFont
+
+from .settings_store import settings
 
 
 def replace_text_and_save(image_path, text, output_folder):
@@ -52,20 +54,72 @@ def replace_text_and_save(image_path, text, output_folder):
         return False, str(e)
 
 
+class CertGenerateWorker(QThread):
+    logSignal = Signal(str)
+    finishedSignal = Signal(int, int)
+
+    def __init__(self, image_path, selected_folder, subdirectories, texts):
+        super().__init__()
+        self.image_path = image_path
+        self.selected_folder = selected_folder
+        self.subdirectories = list(subdirectories)
+        self.texts = list(texts)
+
+    def run(self):
+        success_count = 0
+        fail_count = 0
+
+        for i, text in enumerate(self.texts):
+            text = str(text).strip()
+            if not text:
+                continue
+
+            if self.subdirectories and i < len(self.subdirectories):
+                output_dir = os.path.join(
+                    self.selected_folder, self.subdirectories[i])
+            else:
+                output_dir = self.selected_folder
+
+            if not os.path.exists(output_dir):
+                os.makedirs(output_dir)
+
+            success, result = replace_text_and_save(
+                self.image_path, text, output_dir)
+            if success:
+                self.logSignal.emit(f"文件已生成：{result}")
+                success_count += 1
+            else:
+                self.logSignal.emit(f"[失败] 生成文件失败：{result}")
+                fail_count += 1
+
+        self.finishedSignal.emit(success_count, fail_count)
+
+
 class CertGeneratorBackend(QObject):
     logMessage = Signal(str)
     generateFinished = Signal(int, int)
     subdirsDetected = Signal(list)
+    busyChanged = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
         desktop = os.path.join(os.path.expanduser("~"), "Desktop")
-        self._image_path = os.path.normpath(os.path.join(desktop, "cs", "合格证.png"))
+        self._image_path = settings.get(
+            "cert_generator.image_path",
+            os.path.normpath(os.path.join(desktop, "cs", "合格证.png")))
         self._output_folder = os.path.normpath(os.path.join(desktop, "cs", "x"))
-        self._browse_folder = r"D:\1上款"
-        self._selected_folder = ""
+        self._browse_folder = settings.get("cert_generator.browse_folder", r"D:\1上款")
+        self._selected_folder = settings.get("cert_generator.selected_folder", "")
         self._subdirectories = []
-        self._default_image_folder = os.path.normpath(os.path.join(desktop, "上款"))
+        self._default_image_folder = settings.get(
+            "cert_generator.default_image_folder",
+            os.path.normpath(os.path.join(desktop, "上款")))
+        self._worker = None
+        self._busy = False
+
+    @Slot(result=bool)
+    def isBusy(self):
+        return self._busy
 
     @Slot(result=str)
     def getDefaultBrowseFolder(self):
@@ -81,28 +135,28 @@ class CertGeneratorBackend(QObject):
 
     @Slot(str)
     def setImagePath(self, path):
-        import urllib.parse
-        if path.startswith("file:///"):
-            path = path[8:]
-        path = os.path.normpath(urllib.parse.unquote(path))
+        path = _clean_path(path)
         self._image_path = path
+        settings.set("cert_generator.image_path", path)
+        parent = os.path.dirname(path)
+        if parent:
+            self._default_image_folder = parent
+            settings.set("cert_generator.default_image_folder", parent)
         self.logMessage.emit(f"已选择图片: {path}")
 
     @Slot(str)
     def setSelectedFolder(self, path):
-        import urllib.parse
-        if path.startswith("file:///"):
-            path = path[8:]
-        path = os.path.normpath(urllib.parse.unquote(path))
+        path = _clean_path(path)
         self._selected_folder = path
+        self._browse_folder = path or self._browse_folder
+        settings.set("cert_generator.selected_folder", path)
+        if path:
+            settings.set("cert_generator.browse_folder", path)
         self.logMessage.emit(f"当前主目录: {path}")
 
     @Slot(str)
     def setOutputFolder(self, path):
-        import urllib.parse
-        if path.startswith("file:///"):
-            path = path[8:]
-        path = os.path.normpath(urllib.parse.unquote(path))
+        path = _clean_path(path)
         self._output_folder = path
         self.logMessage.emit(f"统一存放目录: {path}")
 
@@ -151,30 +205,31 @@ class CertGeneratorBackend(QObject):
 
     @Slot(list)
     def batchGenerate(self, texts):
-        success_count = 0
-        fail_count = 0
+        if self._busy:
+            return
+        if not self._selected_folder:
+            self.logMessage.emit("[警告] 请先选择一个目录！")
+            self.generateFinished.emit(0, 0)
+            return
 
-        for i, text in enumerate(texts):
-            text = str(text).strip()
-            if not text:
-                continue
+        self._busy = True
+        self.busyChanged.emit()
+        self._worker = CertGenerateWorker(
+            self._image_path, self._selected_folder, self._subdirectories, texts)
+        self._worker.logSignal.connect(self.logMessage.emit)
+        self._worker.finishedSignal.connect(self._on_generate_finished)
+        self._worker.start()
 
-            if self._subdirectories and i < len(self._subdirectories):
-                output_dir = os.path.join(
-                    self._selected_folder, self._subdirectories[i])
-            else:
-                output_dir = self._selected_folder
-
-            if not os.path.exists(output_dir):
-                os.makedirs(output_dir)
-
-            success, result = replace_text_and_save(
-                self._image_path, text, output_dir)
-            if success:
-                self.logMessage.emit(f"文件已生成：{result}")
-                success_count += 1
-            else:
-                self.logMessage.emit(f"[失败] 生成文件失败：{result}")
-                fail_count += 1
-
+    def _on_generate_finished(self, success_count, fail_count):
+        self._busy = False
+        self._worker = None
+        self.busyChanged.emit()
         self.generateFinished.emit(success_count, fail_count)
+
+
+def _clean_path(path: str) -> str:
+    import urllib.parse
+    path = str(path or "")
+    if path.startswith("file:///"):
+        path = path[8:]
+    return os.path.normpath(urllib.parse.unquote(path)) if path else ""

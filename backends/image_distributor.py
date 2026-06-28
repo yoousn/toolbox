@@ -1,19 +1,69 @@
 # -*- coding: utf-8 -*-
 import os
 import shutil
-from PySide6.QtCore import QObject, Slot, Signal
+from PySide6.QtCore import QObject, Slot, Signal, QThread
+
+from .settings_store import settings
+
+
+class ImageDistributionWorker(QThread):
+    logSignal = Signal(str)
+    finishedSignal = Signal(int)
+
+    def __init__(self, source_image, target_folders):
+        super().__init__()
+        self.source_image = source_image
+        self.target_folders = list(target_folders)
+
+    def run(self):
+        self.logSignal.emit("-" * 40)
+        self.logSignal.emit("开始批量分发...")
+        success_count = 0
+
+        for main_folder in self.target_folders:
+            self.logSignal.emit(f"\n正在处理主文件夹: {main_folder}")
+            try:
+                items = os.listdir(main_folder)
+            except Exception as e:
+                self.logSignal.emit(f"[错误] 无法读取文件夹 {main_folder}: {e}")
+                continue
+
+            for item in items:
+                sub_folder_path = os.path.join(main_folder, item)
+                if os.path.isdir(sub_folder_path):
+                    target_file_path = os.path.join(
+                        sub_folder_path, os.path.basename(self.source_image))
+                    try:
+                        shutil.copy2(self.source_image, target_file_path)
+                        self.logSignal.emit(f"成功 -> {sub_folder_path}")
+                        success_count += 1
+                    except Exception as e:
+                        self.logSignal.emit(f"[失败] -> {sub_folder_path} (原因: {e})")
+
+        self.logSignal.emit("-" * 40)
+        self.logSignal.emit(f"分发完成！成功复制: {success_count} 个文件夹。")
+        self.finishedSignal.emit(success_count)
 
 
 class ImageDistributorBackend(QObject):
     logMessage = Signal(str)
     distributionFinished = Signal(int)
+    busyChanged = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self._source_image = ""
         self._target_folders = []
-        self._default_image_dir = "D:/1上款/尺码"
-        self._last_target_dir = "D:/1上款"
+        self._default_image_dir = settings.get(
+            "image_distributor.default_image_dir", "D:/1上款/尺码")
+        self._last_target_dir = settings.get(
+            "image_distributor.last_target_dir", "D:/1上款")
+        self._worker = None
+        self._busy = False
+
+    @Slot(result=bool)
+    def isBusy(self):
+        return self._busy
 
     @Slot(result=str)
     def getDefaultImageDir(self):
@@ -34,6 +84,10 @@ class ImageDistributorBackend(QObject):
             path = path[8:]
         path = os.path.normpath(urllib.parse.unquote(path))
         self._source_image = path
+        parent = os.path.dirname(path)
+        if parent:
+            self._default_image_dir = parent
+            settings.set("image_distributor.default_image_dir", parent)
         self.logMessage.emit(f"已选择图片: {path}")
 
     @Slot(result=str)
@@ -49,6 +103,7 @@ class ImageDistributorBackend(QObject):
         if path and path not in self._target_folders:
             self._target_folders.append(path)
             self._last_target_dir = path
+            settings.set("image_distributor.last_target_dir", path)
             self.logMessage.emit(f"已添加主文件夹: {path}")
             return True
         return False
@@ -70,6 +125,8 @@ class ImageDistributorBackend(QObject):
 
     @Slot()
     def startDistribution(self):
+        if self._busy:
+            return
         if not self._source_image:
             self.logMessage.emit("[警告] 请先选择一张需要分发的图片！")
             self.distributionFinished.emit(0)
@@ -79,30 +136,16 @@ class ImageDistributorBackend(QObject):
             self.distributionFinished.emit(0)
             return
 
-        self.logMessage.emit("-" * 40)
-        self.logMessage.emit("开始批量分发...")
-        success_count = 0
+        self._busy = True
+        self.busyChanged.emit()
+        self._worker = ImageDistributionWorker(
+            self._source_image, self._target_folders)
+        self._worker.logSignal.connect(self.logMessage.emit)
+        self._worker.finishedSignal.connect(self._on_finished)
+        self._worker.start()
 
-        for main_folder in self._target_folders:
-            self.logMessage.emit(f"\n正在处理主文件夹: {main_folder}")
-            try:
-                items = os.listdir(main_folder)
-            except Exception as e:
-                self.logMessage.emit(f"[错误] 无法读取文件夹 {main_folder}: {e}")
-                continue
-
-            for item in items:
-                sub_folder_path = os.path.join(main_folder, item)
-                if os.path.isdir(sub_folder_path):
-                    target_file_path = os.path.join(
-                        sub_folder_path, os.path.basename(self._source_image))
-                    try:
-                        shutil.copy2(self._source_image, target_file_path)
-                        self.logMessage.emit(f"成功 -> {sub_folder_path}")
-                        success_count += 1
-                    except Exception as e:
-                        self.logMessage.emit(f"[失败] -> {sub_folder_path} (原因: {e})")
-
-        self.logMessage.emit("-" * 40)
-        self.logMessage.emit(f"分发完成！成功复制: {success_count} 个文件夹。")
-        self.distributionFinished.emit(success_count)
+    def _on_finished(self, count):
+        self._busy = False
+        self._worker = None
+        self.busyChanged.emit()
+        self.distributionFinished.emit(count)

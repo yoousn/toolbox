@@ -2,6 +2,8 @@
 import os
 from PySide6.QtCore import QObject, Slot, Signal, QThread
 
+from .settings_store import settings
+
 
 class WhiteBgWorker(QThread):
     logSignal = Signal(str)
@@ -80,7 +82,7 @@ class WhiteBgProcessorBackend(QObject):
         self._busy = False
         self._session = None
         self._session_initialized = False
-        self._default_path = "D:\\1上款"
+        self._default_path = settings.get("white_bg.default_path", "D:\\1上款")
 
     @Slot()
     def markU2netAvailable(self):
@@ -119,16 +121,21 @@ class WhiteBgProcessorBackend(QObject):
     def getDefaultPath(self):
         return self._default_path
 
+    @Slot(str)
+    def rememberDefaultPath(self, path):
+        clean = _clean_path(path)
+        if clean:
+            self._default_path = clean
+            settings.set("white_bg.default_path", clean)
+
     @Slot(str, str)
     def detectImages(self, base_dir, filename):
-        import urllib.parse
-        if base_dir.startswith("file:///"):
-            base_dir = base_dir[8:]
-        base_dir = os.path.normpath(urllib.parse.unquote(base_dir))
+        base_dir = _clean_path(base_dir)
 
         if not os.path.exists(base_dir):
             self.logMessage.emit("[错误] 指定目录不存在！")
             return
+        self.rememberDefaultPath(base_dir)
         if not filename:
             self.logMessage.emit("[错误] 请输入要搜索的文件名！")
             return
@@ -216,3 +223,11 @@ class WhiteBgProcessorBackend(QObject):
     def clearResults(self):
         self._image_paths = []
         self._missing_folders = []
+
+
+def _clean_path(path: str) -> str:
+    import urllib.parse
+    path = str(path or "")
+    if path.startswith("file:///"):
+        path = path[8:]
+    return os.path.normpath(urllib.parse.unquote(path)) if path else ""

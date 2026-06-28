@@ -16,6 +16,7 @@ ApplicationWindow {
 
     // 拍平后的工具列表(供主内容区按索引取页面路径)
     property var allTools: Tools.flatTools()
+    property var loadedPages: ({0: true})
 
     // 更新检查
     property string latestVersion: ""
@@ -176,11 +177,18 @@ ApplicationWindow {
             Layout.margins: 20
             currentIndex: sideBar.currentIndex
 
+            onCurrentIndexChanged: {
+                var pages = {}
+                for (var k in mainWindow.loadedPages) pages[k] = true
+                pages[currentIndex] = true
+                mainWindow.loadedPages = pages
+            }
+
             Repeater {
                 model: mainWindow.allTools
                 delegate: Loader {
-                    // 全部预加载,避免页面切换时丢失内部状态
-                    source: modelData.page
+                    active: mainWindow.loadedPages[index] === true
+                    source: active ? modelData.page : ""
                 }
             }
         }

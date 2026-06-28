@@ -7,11 +7,12 @@ import QtQuick.Dialogs
 Rectangle {
     color: "#F5F6F8"
     property var folderList: []
+    property bool backendBusy: false
 
     FileDialog {
         id: imageFileDialog
         title: "选择图片"
-        currentFolder: "file:///D:/1上款/尺码"
+        currentFolder: imageDistributor.getDefaultImageDir() ? ("file:///" + imageDistributor.getDefaultImageDir().replace(/\\/g, "/")) : ""
         nameFilters: ["图片文件 (*.jpg *.jpeg *.png *.bmp *.gif)", "所有文件 (*.*)"]
         onAccepted: {
             imageDistributor.setSourceImage(selectedFile.toString())
@@ -22,7 +23,7 @@ Rectangle {
     FolderDialog {
         id: folderDialog
         title: "选择主文件夹"
-        currentFolder: "file:///D:/1上款"
+        currentFolder: imageDistributor.getLastTargetDir() ? ("file:///" + imageDistributor.getLastTargetDir().replace(/\\/g, "/")) : ""
         onAccepted: {
             var path = selectedFolder.toString().replace("file:///", "")
             if (imageDistributor.addTargetFolder(path)) {
@@ -35,6 +36,7 @@ Rectangle {
     Connections {
         target: imageDistributor
         function onLogMessage(msg) { logModel.append({"text": msg}) }
+        function onBusyChanged() { backendBusy = imageDistributor.isBusy() }
         function onDistributionFinished(count) {
             statusLabel.text = "图片分发完毕！\n共成功放入 " + count + " 个子文件夹中。"
             statusLabel.color = "#0078D4"
@@ -184,9 +186,11 @@ Rectangle {
 
         // 步骤3：执行区与输出
         ModernButton {
+            id: btnStart
             Layout.fillWidth: true
             implicitHeight: 46
-            text: "开始分发图片"
+            text: backendBusy ? "分发中..." : "开始分发图片"
+            enabled: !backendBusy
             onClicked: imageDistributor.startDistribution()
             
             

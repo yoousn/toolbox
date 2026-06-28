@@ -5,6 +5,8 @@ import shutil
 from pathlib import Path
 from PySide6.QtCore import QObject, Slot, Signal, QThread
 
+from .settings_store import settings
+
 
 class VideoProcessWorker(QThread):
     logSignal = Signal(str)
@@ -294,23 +296,33 @@ class VideoProcessorBackend(QObject):
         self._worker = None
         self._cleanup_worker = None
         self._busy = False
+        self._default_dir = settings.get("video_processor.default_dir", "D:\\1上款")
 
     @Slot(result=bool)
     def isBusy(self):
         return self._busy
 
+    @Slot(result=str)
+    def getDefaultDir(self):
+        return self._default_dir
+
+    @Slot(str)
+    def rememberDefaultDir(self, root_dir):
+        root_dir = _clean_path(root_dir)
+        if root_dir:
+            self._default_dir = root_dir
+            settings.set("video_processor.default_dir", root_dir)
+
     @Slot(str, str, str)
     def startTask(self, root_dir, file_format, mode):
         if self._busy:
             return
-        import urllib.parse
-        if root_dir.startswith("file:///"):
-            root_dir = root_dir[8:]
-        root_dir = os.path.normpath(urllib.parse.unquote(root_dir))
+        root_dir = _clean_path(root_dir)
 
         if not root_dir or not os.path.isdir(root_dir):
             self.logMessage.emit("请选择有效的文件夹路径！")
             return
+        self.rememberDefaultDir(root_dir)
 
         self._busy = True
         self.busyChanged.emit()
@@ -336,13 +348,11 @@ class VideoProcessorBackend(QObject):
     def _start_cleanup(self, root_dir, mode):
         if self._busy:
             return
-        import urllib.parse
-        if root_dir.startswith("file:///"):
-            root_dir = root_dir[8:]
-        root_dir = os.path.normpath(urllib.parse.unquote(root_dir))
+        root_dir = _clean_path(root_dir)
         if not root_dir or not os.path.isdir(root_dir):
             self.logMessage.emit("请选择有效的文件夹路径！")
             return
+        self.rememberDefaultDir(root_dir)
 
         self._busy = True
         self.busyChanged.emit()
@@ -365,3 +375,11 @@ class VideoProcessorBackend(QObject):
         self._busy = False
         self.busyChanged.emit()
         self.taskError.emit(msg)
+
+
+def _clean_path(path: str) -> str:
+    import urllib.parse
+    path = str(path or "")
+    if path.startswith("file:///"):
+        path = path[8:]
+    return os.path.normpath(urllib.parse.unquote(path)) if path else ""

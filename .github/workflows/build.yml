@@ -19,7 +19,7 @@ jobs:
           python-version: '3.11'
 
       - name: Install dependencies
-        run: pip install -r requirements.txt pyinstaller
+        run: pip install -r requirements.txt pyinstaller "setuptools<81"
 
       - name: Install UPX
         shell: pwsh
@@ -31,7 +31,7 @@ jobs:
       - name: Build exe
         shell: cmd
         run: |
-          pyinstaller --noconfirm --onedir --windowed --name "toolbox" --icon "app.ico" --upx-dir . --add-data "qml;qml" --exclude-module PyQt5 --exclude-module PyQt6 --exclude-module tkinter --exclude-module matplotlib --exclude-module scipy --exclude-module PySide6.QtWebEngine --exclude-module PySide6.Qt3D --exclude-module PySide6.QtBluetooth --exclude-module PySide6.QtMultimedia --exclude-module PySide6.QtSensors --exclude-module PySide6.QtSerialPort --exclude-module PySide6.QtTest --exclude-module PySide6.QtPdf main.py
+          pyinstaller --noconfirm --onedir --windowed --name "toolbox" --icon "app.ico" --upx-dir . --add-data "qml;qml" --exclude-module PyQt5 --exclude-module PyQt6 --exclude-module tkinter --exclude-module matplotlib --exclude-module polars --exclude-module pyarrow --exclude-module IPython --exclude-module jupyter --exclude-module notebook --exclude-module gradio --exclude-module torch --exclude-module tensorflow --exclude-module PySide6.QtWebEngine --exclude-module PySide6.Qt3D --exclude-module PySide6.QtBluetooth --exclude-module PySide6.QtMultimedia --exclude-module PySide6.QtSensors --exclude-module PySide6.QtSerialPort --exclude-module PySide6.QtTest --exclude-module PySide6.QtPdf main.py
 
       - name: Zip output
         shell: pwsh

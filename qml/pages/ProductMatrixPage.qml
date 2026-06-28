@@ -11,6 +11,7 @@ Rectangle {
     FolderDialog {
         id: exportDirDlg
         title: "选择导出目录"
+        currentFolder: pathInput.text ? ("file:///" + pathInput.text.replace(/\\/g, "/")) : "file:///D:/"
         onAccepted: pathInput.text = selectedFolder.toString().replace("file:///", "")
     }
 

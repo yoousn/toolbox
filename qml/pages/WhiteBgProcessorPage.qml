@@ -10,10 +10,15 @@ Rectangle {
     property bool modelReady: u2netAvailable
     property string selectedUrl: ""
     property bool latencyTesting: false
+    property bool latencyStarted: false
+    property string modelStatusText: modelDownloader.modelStatusText("u2net")
 
     Connections {
         target: whiteBgProcessor
-        function onU2netAvailableChanged(v) { modelReady = v }
+        function onU2netAvailableChanged(v) {
+            modelReady = v
+            modelStatusText = modelDownloader.modelStatusText("u2net")
+        }
     }
 
     Connections {
@@ -27,6 +32,7 @@ Rectangle {
             dlStatus.text = "下载完成,模型已就绪"
             dlStatus.color = "#388E3C"
             dlBar.value = 1
+            modelStatusText = modelDownloader.modelStatusText("u2net")
         }
         function onFailedSig(modelId, err) {
             dlStatus.text = err
@@ -45,14 +51,18 @@ Rectangle {
     FolderDialog {
         id: dirDialog
         title: "选择当前目录"
-        currentFolder: "file:///D:/1上款"
-        onAccepted: dirInput.text = selectedFolder.toString().replace("file:///", "")
+        currentFolder: whiteBgProcessor.getDefaultPath() ? ("file:///" + whiteBgProcessor.getDefaultPath().replace(/\\/g, "/")) : ""
+        onAccepted: {
+            dirInput.text = selectedFolder.toString().replace("file:///", "")
+            whiteBgProcessor.rememberDefaultPath(dirInput.text)
+        }
     }
 
     FileDialog {
         id: filesDialog
         title: "选择独立图片文件"
         fileMode: FileDialog.OpenFiles
+        currentFolder: whiteBgProcessor.getDefaultPath() ? ("file:///" + whiteBgProcessor.getDefaultPath().replace(/\\/g, "/")) : ""
         nameFilters: ["Images (*.png *.jpg *.jpeg)"]
         onAccepted: {
             var paths = selectedIndependentFiles
@@ -131,7 +141,7 @@ Rectangle {
                         Label { text: "当前目录:"; color: "#333333"; font.pixelSize: 14; font.bold: true; Layout.preferredWidth: 80 }
                         Rectangle {
                             Layout.fillWidth: true; Layout.preferredHeight: 34; radius: 4; border.color: "#CCCCCC"; color: "#FFFFFF"
-                            TextInput { id: dirInput; text: "D:\\1上款"; anchors.fill: parent; anchors.leftMargin: 8; verticalAlignment: TextInput.AlignVCenter; color: "#333333"; font.pixelSize: 13; clip: true }
+                            TextInput { id: dirInput; text: whiteBgProcessor.getDefaultPath(); anchors.fill: parent; anchors.leftMargin: 8; verticalAlignment: TextInput.AlignVCenter; color: "#333333"; font.pixelSize: 13; clip: true }
                         }
                         ModernButton {
                             text: "浏览目录"
@@ -237,7 +247,7 @@ Rectangle {
             RowLayout {
                 Label { text: "处理进度"; color: "#666666"; font.pixelSize: 12 }
                 Item { Layout.fillWidth: true }
-                Label { id: statusLabel; text: "就绪"; color: "#666666"; font.pixelSize: 12 }
+                Label { id: statusLabel; text: modelStatusText; color: "#666666"; font.pixelSize: 12 }
             }
             ProgressBar { 
                 id: progressBar; Layout.fillWidth: true; value: 0
@@ -285,6 +295,7 @@ Rectangle {
 
     // 模型未下载时显示的遮罩卡片
     Rectangle {
+        id: modelOverlay
         anchors.fill: parent
         visible: !modelReady
         color: "#E6F5F6F8"
@@ -302,11 +313,16 @@ Rectangle {
                 mirrorModel.append({ mId: "huggingface", mName: "HuggingFace",    mUrl: "https://huggingface.co/BritishWerewolf/U-2-Net/resolve/main/u2net.onnx",                                           mLatency: -2 })
                 mirrorModel.append({ mId: "sourceforge", mName: "SourceForge",    mUrl: "https://sourceforge.net/projects/bgremover-app/files/u2net/u2net.onnx/download",                                  mLatency: -2 })
 
-                // 异步测延迟
-                latencyTesting = true
-                modelDownloader.testLatency()
-                latencyTimeout.start()
+                modelOverlay.startLatencyTest()
             }
+        }
+
+        function startLatencyTest() {
+            if (latencyStarted || latencyTesting || modelReady) return
+            latencyStarted = true
+            latencyTesting = true
+            modelDownloader.testLatency()
+            latencyTimeout.start()
         }
 
         Timer {
@@ -320,7 +336,7 @@ Rectangle {
                         if (mirrorModel.get(i).mLatency === -2)
                             mirrorModel.setProperty(i, "mLatency", -1)
                     }
-                    autoSelectBest()
+                    modelOverlay.autoSelectBest()
                 }
             }
         }
@@ -355,7 +371,7 @@ Rectangle {
                     }
                 }
                 latencyTesting = false
-                autoSelectBest()
+                modelOverlay.autoSelectBest()
             }
         }
 
@@ -395,7 +411,7 @@ Rectangle {
                 }
 
                 Label {
-                    text: "u2net 模型(约 " + modelDownloader.expectedSizeMb("u2net") + " MB),选择下载源后点击下载,或点击链接手动下载放入目录。"
+                    text: modelStatusText + "。u2net 模型约 " + modelDownloader.expectedSizeMb("u2net") + " MB,选择下载源后点击下载,或点击链接手动下载放入目录。"
                     color: "#555555"
                     font.pixelSize: 12
                     wrapMode: Text.WordWrap

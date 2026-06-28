@@ -46,8 +46,8 @@ MODEL_REGISTRY = {
     "u2net": {
         "path": ".u2net/u2net.onnx",
         "size_mb": 168,
-        # SHA256 from rembg v0.0.0 release, enables integrity verification
-        "sha256": "dcbb85cce16dc718fa2c762294e5989c212076845d44495a57e2d33aad3ad132",
+        # Official rembg checksum for the u2net v0.0.0 model.
+        "checksum": "md5:60024c5c889badc19c04ad937298a77b",
     },
 }
 
@@ -93,11 +93,11 @@ class _DownloadWorker(QThread):
     finished_ok = Signal(str)
     failed = Signal(str)
 
-    def __init__(self, url: str, target: Path, sha256: str = ""):
+    def __init__(self, url: str, target: Path, checksum: str = ""):
         super().__init__()
         self.url = url
         self.target = target
-        self.sha256 = sha256
+        self.checksum = checksum
         self._cancel = False
 
     def cancel(self):
@@ -162,9 +162,10 @@ class _DownloadWorker(QThread):
                                 )
 
             # 校验
-            if self.sha256:
-                actual = self._sha256_file(tmp)
-                if actual.lower() != self.sha256.lower():
+            if self.checksum:
+                expected_algo, expected_hash = _parse_checksum(self.checksum)
+                actual = self._hash_file(tmp, expected_algo)
+                if actual.lower() != expected_hash.lower():
                     tmp.unlink(missing_ok=True)
                     self.failed.emit(f"校验失败,文件可能损坏")
                     return
@@ -179,8 +180,8 @@ class _DownloadWorker(QThread):
                 self.failed.emit(f"下载失败: {e}")
 
     @staticmethod
-    def _sha256_file(path: Path) -> str:
-        h = hashlib.sha256()
+    def _hash_file(path: Path, algorithm: str) -> str:
+        h = hashlib.new(algorithm)
         with open(path, "rb") as f:
             for chunk in iter(lambda: f.read(1024 * 1024), b""):
                 h.update(chunk)
@@ -213,7 +214,38 @@ class ModelDownloaderBackend(QObject):
         info = MODEL_REGISTRY.get(model_id)
         if not info:
             return False
-        return (self._app_dir / info["path"]).exists()
+        return self.modelStatus(model_id) in ("ok", "unchecked", "mismatch")
+
+    @Slot(str, result=str)
+    def modelStatus(self, model_id: str) -> str:
+        info = MODEL_REGISTRY.get(model_id)
+        if not info:
+            return "unknown"
+        target = self._app_dir / info["path"]
+        if not target.exists():
+            return "missing"
+        checksum = info.get("checksum", "")
+        if not checksum:
+            return "unchecked"
+        try:
+            expected_algo, expected_hash = _parse_checksum(checksum)
+            actual = _hash_file(target, expected_algo)
+        except Exception:
+            return "unchecked"
+        return "ok" if actual.lower() == expected_hash.lower() else "mismatch"
+
+    @Slot(str, result=str)
+    def modelStatusText(self, model_id: str) -> str:
+        status = self.modelStatus(model_id)
+        if status == "ok":
+            return "模型已就绪,校验正常"
+        if status == "unchecked":
+            return "模型已存在,未配置校验,可尝试使用"
+        if status == "mismatch":
+            return "模型已存在,但校验不匹配,建议重新下载"
+        if status == "missing":
+            return "模型未下载"
+        return "未知模型"
 
     @Slot(str, result=int)
     def expectedSizeMb(self, model_id: str) -> int:
@@ -246,9 +278,9 @@ class ModelDownloaderBackend(QObject):
 
         self._current_model = model_id
         target = self._app_dir / info["path"]
-        sha256 = info.get("sha256", "")
+        checksum = info.get("checksum", "")
 
-        self._worker = _DownloadWorker(mirror_url, target, sha256)
+        self._worker = _DownloadWorker(mirror_url, target, checksum)
         self._worker.progress.connect(self.progressChanged)
         self._worker.finished_ok.connect(
             lambda p, m=model_id: self.succeeded.emit(m, p)
@@ -301,3 +333,19 @@ def _fmt_eta(seconds: float) -> str:
     if seconds < 3600:
         return f"{seconds // 60}分{seconds % 60:02d}秒"
     return f"{seconds // 3600}时{(seconds % 3600) // 60:02d}分"
+
+
+def _parse_checksum(checksum: str) -> tuple[str, str]:
+    if ":" in checksum:
+        algorithm, expected_hash = checksum.split(":", 1)
+    else:
+        algorithm, expected_hash = "sha256", checksum
+    return algorithm.lower(), expected_hash
+
+
+def _hash_file(path: Path, algorithm: str) -> str:
+    h = hashlib.new(algorithm)
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+            h.update(chunk)
+    return h.hexdigest()
