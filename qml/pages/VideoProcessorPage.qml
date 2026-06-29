@@ -14,11 +14,17 @@ Rectangle {
     FolderDialog { 
         id: dirDialog
         title: "选择目标目录"
-        currentFolder: videoProcessor.getDefaultDir() ? ("file:///" + videoProcessor.getDefaultDir().replace(/\\/g, "/")) : ""
         onAccepted: {
             dirInput.text = selectedFolder.toString().replace("file:///", "")
             videoProcessor.rememberDefaultDir(dirInput.text)
         }
+    }
+
+    // 打开浏览对话框前，动态设置 currentFolder 为当前输入框路径
+    function openDirDialog() {
+        var p = dirInput.text.replace(/\\/g, "/")
+        if (p) dirDialog.currentFolder = "file:///" + p
+        dirDialog.open()
     }
 
     Connections {
@@ -32,6 +38,9 @@ Rectangle {
             btnAnalyze.enabled = !b
             btnRename.enabled = !b
             btnCopy.enabled = !b
+            btnFirstAnalyze.enabled = !b
+            btnFirstRename.enabled = !b
+            btnFirstCopy.enabled = !b
             btnScan.enabled = !b
             btnCleanup.enabled = !b && scanDone
         }
@@ -79,7 +88,7 @@ Rectangle {
                     ModernButton {
                         text: "浏览"
                         implicitHeight: 34; implicitWidth: 80
-                        onClicked: dirDialog.open()
+                        onClicked: openDirDialog()
                     }
                 }
 
@@ -114,6 +123,31 @@ Rectangle {
                 id: btnCopy
                 Layout.fillWidth: true; implicitHeight: 46; text: "📋 提取副本到总目录"
                 onClicked: { logModel.clear(); videoProcessor.startTask(dirInput.text, formatCombo.currentText, "copy") }
+            }
+        }
+
+        // ===== 只取首个视频 按钮行 =====
+        RowLayout {
+            Layout.fillWidth: true
+            spacing: 15
+
+            ModernButton {
+                id: btnFirstAnalyze
+                Layout.fillWidth: true; implicitHeight: 46; text: "🔍 分析(仅首个视频)"
+                bgColor: "#43A047"; hoverColor: "#388E3C"; pressedColor: "#2E7D32"
+                onClicked: { logModel.clear(); videoProcessor.startTask(dirInput.text, formatCombo.currentText, "analyze", true) }
+            }
+            ModernButton {
+                id: btnFirstRename
+                Layout.fillWidth: true; implicitHeight: 46; text: "✏️ 重命名(仅首个视频)"
+                bgColor: "#43A047"; hoverColor: "#388E3C"; pressedColor: "#2E7D32"
+                onClicked: { logModel.clear(); videoProcessor.startTask(dirInput.text, formatCombo.currentText, "rename", true) }
+            }
+            ModernButton {
+                id: btnFirstCopy
+                Layout.fillWidth: true; implicitHeight: 46; text: "📋 提取首个视频到总目录"
+                bgColor: "#43A047"; hoverColor: "#388E3C"; pressedColor: "#2E7D32"
+                onClicked: { logModel.clear(); videoProcessor.startTask(dirInput.text, formatCombo.currentText, "copy", true) }
             }
         }
 

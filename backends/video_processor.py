@@ -14,11 +14,12 @@ class VideoProcessWorker(QThread):
     finishedSignal = Signal(str)
     errorSignal = Signal(str)
 
-    def __init__(self, root_dir, file_format, mode):
+    def __init__(self, root_dir, file_format, mode, first_only=False):
         super().__init__()
         self.root_dir = root_dir
         self.file_format = file_format
         self.mode = mode
+        self.first_only = first_only
 
     def run(self):
         try:
@@ -54,6 +55,11 @@ class VideoProcessWorker(QThread):
                 video_files = (list(folder_path.glob(f"*.{ext_lower}")) +
                                list(folder_path.glob(f"*.{ext_upper}")))
                 video_files = sorted(list(set(video_files)))
+
+                # 只选第一个视频
+                if self.first_only and len(video_files) > 1:
+                    video_files = [video_files[0]]
+
                 file_count = len(video_files)
 
                 if not video_files:
@@ -313,8 +319,8 @@ class VideoProcessorBackend(QObject):
             self._default_dir = root_dir
             settings.set("video_processor.default_dir", root_dir)
 
-    @Slot(str, str, str)
-    def startTask(self, root_dir, file_format, mode):
+    @Slot(str, str, str, bool)
+    def startTask(self, root_dir, file_format, mode, first_only=False):
         if self._busy:
             return
         root_dir = _clean_path(root_dir)
@@ -327,7 +333,7 @@ class VideoProcessorBackend(QObject):
         self._busy = True
         self.busyChanged.emit()
 
-        self._worker = VideoProcessWorker(root_dir, file_format, mode)
+        self._worker = VideoProcessWorker(root_dir, file_format, mode, first_only)
         self._worker.logSignal.connect(self.logMessage.emit)
         self._worker.progressSignal.connect(self.progressUpdated.emit)
         self._worker.finishedSignal.connect(self._on_finished)
