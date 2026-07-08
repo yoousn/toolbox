@@ -10,6 +10,12 @@ Rectangle {
     // 防止联动递归
     property bool _updating: false
 
+    // 日期面板数据模型（顶层，弹窗和主页面共享）
+    ListModel { id: panelModel }
+
+    // 时间输入框模型
+    ListModel { id: timeInputModel }
+
     // 中班概率联动：修改一个，按比例分配剩余到另外两个
     function redistributeNoon(changedId) {
         if (_updating) return
@@ -109,6 +115,14 @@ Rectangle {
         return JSON.stringify(obj)
     }
 
+    function formatTimeInput(text) {
+        var t = text.replace(/[^0-9]/g, "")
+        if (t.length === 4) {
+            return t.substring(0, 2) + ":" + t.substring(2, 4)
+        }
+        return text
+    }
+
     FileDialog {
         id: excelFileDlg
         title: "选择考勤报表文件"
@@ -123,8 +137,75 @@ Rectangle {
     Connections {
         target: attendanceSync
         function onLogMessage(msg) { logModel.append({"text": msg}) }
-        function onSyncFinished(msg) { statusLabel.text = msg; statusLabel.color = "#0078D4" }
-        function onSyncError(msg) { statusLabel.text = "错误: " + msg; statusLabel.color = "#D32F2F" }
+        function onSyncFinished(msg) { statusLabel.text = msg; statusLabel.color = "#0078D4"; closeExcelBtn.visible = false }
+        function onSyncError(msg) {
+            if (msg.startsWith("OCCUPIED|")) {
+                statusLabel.text = "文件被占用，请点击“关闭已打开的Excel”按钮"
+                closeExcelBtn.visible = true
+            } else {
+                statusLabel.text = "错误: " + msg
+                closeExcelBtn.visible = false
+            }
+            // 如果日期校对弹窗正在加载（panelModel 为空）时出错，关闭弹窗避免永久卡在加载界面
+            if (dayPanelWindow.visible && panelModel.count === 0) {
+                dayPanelWindow.hide()
+            }
+        }
+        function onFileClosed(closed) {
+            closeExcelBtn.visible = false   // 关闭后隐藏按钮
+            if (closed) {
+                statusLabel.text = "文件已关闭，可以重新同步"
+                statusLabel.color = "#0078D4"
+            } else {
+                statusLabel.text = "未能关闭文件，请手动关闭 Excel"
+                statusLabel.color = "#D32F2F"
+            }
+        }
+        function onSyncDataReady(dataJson) {
+            var oldSelectedDay = dayPanelWindow.selectedDay
+            updatePanelModel(dataJson)
+            // 如果弹窗已打开且没有选中日期，默认选中第一天
+            if (dayPanelWindow.visible && oldSelectedDay === 0) {
+                dayPanelWindow.selectFirstDay()
+            }
+        }
+        function onManualUpdateFinished(msg) {
+            statusLabel.text = msg
+            statusLabel.color = "#0078D4"
+        }
+    }
+
+    function updatePanelModel(dataJson) {
+        panelModel.clear()
+        // 先添加一个包含所有 role 的占位条目，确保 ListModel 识别所有 role
+        panelModel.append({
+            day: 0, inTime: "", outTime: "", allTimes: "",
+            timeCount: 0, duration: 0,
+            modified: false, sheet1: false, sheet2: false, sheet3: false
+        })
+        panelModel.remove(0)
+
+        try {
+            var data = JSON.parse(dataJson)
+            for (var day = 1; day <= 31; day++) {
+                var key = String(day)
+                var item = data[key] || {}
+                panelModel.append({
+                    day: day,
+                    inTime: item.in || "",
+                    outTime: item.out || "",
+                    allTimes: item.allTimes || "",
+                    timeCount: item.timeCount || 0,
+                    duration: item.duration || 0,
+                    modified: !!item.modified,
+                    sheet1: !!item.sheet1,
+                    sheet2: !!item.sheet2,
+                    sheet3: !!item.sheet3
+                })
+            }
+        } catch (e) {
+            console.log("解析面板数据失败:", e)
+        }
     }
 
     Flickable {
@@ -155,6 +236,13 @@ Rectangle {
                         }
                     }
                     ModernButton { text: "浏览"; implicitHeight: 32; onClicked: excelFileDlg.open() }
+                    ModernButton {
+                        id: closeExcelBtn
+                        visible: false
+                        text: "关闭已打开的Excel"
+                        implicitHeight: 32
+                        onClicked: attendanceSync.closeExcelFile(pathInput.text)
+                    }
                 }
             }
 
@@ -281,7 +369,7 @@ Rectangle {
                             TextInput {
                                 id: morningOutRange; text: "5"; anchors.fill: parent; anchors.leftMargin: 6
                                 verticalAlignment: TextInput.AlignVCenter; font.pixelSize: 13; color: "#333"
-                                selectByMouse: true; validator: IntValidator { bottom: 1; top: 9 }
+                                selectByMouse: true; validator: IntValidator { bottom: 1; top: 29 }
                             }
                         }
                     }
@@ -355,12 +443,45 @@ Rectangle {
                 }
             }
 
-            // ---- 启动 ----
+            // ---- 启动同步 + 日期校对 ----
             ModernButton {
-                Layout.fillWidth: true; implicitHeight: 44; text: "🚀 启动同步"
+                Layout.fillWidth: true; implicitHeight: 44
+                text: "🚀 启动同步"
+                enabled: !attendanceSync.isBusy
+                opacity: enabled ? 1.0 : 0.5
                 onClicked: {
                     logModel.clear(); statusLabel.text = "正在同步..."
+                    statusLabel.color = "#666"
                     attendanceSync.runSync(pathInput.text, buildSettings())
+                }
+            }
+
+            ModernButton {
+                Layout.fillWidth: true; implicitHeight: 36
+                text: "📅 打开日期校对窗口"
+                bgColor: "#50C878"
+                hoverColor: "#45B569"
+                pressedColor: "#3A9A58"
+                enabled: !attendanceSync.isBusy
+                opacity: enabled ? 1.0 : 0.5
+                onClicked: {
+                    // 防御性检查：忙时不打开弹窗，避免永久卡在加载界面
+                    if (attendanceSync.isBusy) {
+                        statusLabel.text = "正在处理其他操作，请稍后再试"
+                        statusLabel.color = "#FF9800"
+                        return
+                    }
+                    if (!panelModel.count) {
+                        logModel.clear(); statusLabel.text = "正在加载..."
+                        statusLabel.color = "#666"
+                        attendanceSync.loadExcelData(pathInput.text)
+                    } else {
+                        // 如果已有数据，默认选中第一天有数据的日期
+                        dayPanelWindow.selectFirstDay()
+                    }
+                    dayPanelWindow.show()
+                    dayPanelWindow.raise()
+                    dayPanelWindow.requestActivate()
                 }
             }
 
@@ -382,6 +503,274 @@ Rectangle {
                         }
                         onCountChanged: positionViewAtEnd()
                     }
+                }
+            }
+        }
+    }
+
+    // ---- 日期校对弹窗 ----
+    Window {
+        id: dayPanelWindow
+        title: "日期校对面板"
+        width: 676; height: 676  // 520 * 1.3
+        flags: Qt.Dialog | Qt.WindowCloseButtonHint | Qt.WindowTitleHint
+        visible: false
+
+        Rectangle {
+            anchors.fill: parent; color: "#F5F6F8"
+
+            // 加载中遮罩
+            Rectangle {
+                anchors.fill: parent
+                color: "#F5F6F8"
+                visible: panelModel.count === 0
+                z: 10
+                ColumnLayout {
+                    anchors.centerIn: parent
+                    spacing: 16
+                    BusyIndicator { running: true; width: 62; height: 62; Layout.alignment: Qt.AlignHCenter }
+                    Label {
+                        text: "正在读取 Excel 数据，请稍候..."
+                        font.pixelSize: 17; color: "#666"
+                        Layout.alignment: Qt.AlignHCenter
+                    }
+                    Label {
+                        text: "（首次加载需要几秒，数据会缓存）"
+                        font.pixelSize: 14; color: "#999"
+                        Layout.alignment: Qt.AlignHCenter
+                    }
+                }
+            }
+
+            ColumnLayout {
+                anchors { fill: parent; margins: 20 }
+                spacing: 16
+                visible: panelModel.count > 0
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    Label {
+                        text: "📅 日期校对面板"
+                        font.pixelSize: 20; font.bold: true; color: "#333"; Layout.fillWidth: true
+                    }
+                    RowLayout {
+                        spacing: 14
+                        Label { text: "● 工时≤8.5h"; font.pixelSize: 13; color: "#F44336" }
+                        Label { text: "● 3条记录"; font.pixelSize: 13; color: "#FFC107" }
+                        Label { text: "● 正常"; font.pixelSize: 13; color: "#333" }
+                    }
+                }
+                Label {
+                    text: "绿色=已修改 灰色=未修改 | 点击日期可编辑时间"
+                    font.pixelSize: 13; color: "#999"
+                }
+
+                GridLayout {
+                    Layout.fillWidth: true
+                    columns: 7
+                    rowSpacing: 8; columnSpacing: 8
+
+                    Repeater {
+                        model: panelModel
+                        Rectangle {
+                            Layout.fillWidth: true
+                            implicitHeight: 65
+                            radius: 5
+                            color: {
+                                if (dayPanelWindow.selectedDay === day) return "#E3F2FD"
+                                return modified ? "#E8F5E9" : "#F5F5F5"
+                            }
+                            border.color: dayPanelWindow.selectedDay === day ? "#1976D2" : "#DDD"
+
+                            property int day: model.day
+                            property bool modified: model.modified
+
+                            MouseArea {
+                                anchors.fill: parent
+                                onClicked: {
+                                    dayPanelWindow.selectedDay = day
+                                    dayPanelWindow.loadTimesForDay(model.allTimes)
+                                }
+                            }
+
+                            ColumnLayout {
+                                anchors.centerIn: parent
+                                spacing: 1
+                                Label {
+                                    text: day
+                                    font.pixelSize: 17; font.bold: true
+                                    color: modified ? "#2E7D32" : "#666"
+                                    Layout.alignment: Qt.AlignHCenter
+                                }
+                                Label {
+                                    text: model.allTimes ? model.allTimes : "--"
+                                    font.pixelSize: 13
+                                    color: modified ? "#2E7D32" : "#999"
+                                    Layout.alignment: Qt.AlignHCenter
+                                    wrapMode: Text.Wrap
+                                    horizontalAlignment: Text.AlignHCenter
+                                }
+                                Label {
+                                    text: "●"
+                                    font.pixelSize: 13
+                                    Layout.alignment: Qt.AlignHCenter
+                                    color: {
+                                        if (model.timeCount === 3) return "#FFC107"
+                                        if (model.duration > 0 && model.duration <= 8.5) return "#F44336"
+                                        return "#333"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Rectangle {
+                    Layout.fillWidth: true; height: 1; color: "#DDD"
+                    visible: dayPanelWindow.selectedDay > 0
+                }
+
+                // 多时间编辑器
+                ColumnLayout {
+                    visible: dayPanelWindow.selectedDay > 0
+                    Layout.fillWidth: true
+                    spacing: 10
+
+                    Label {
+                        text: dayPanelWindow.selectedDay + "号 - 所有打卡时间"
+                        font.pixelSize: 15; color: "#333"; font.bold: true
+                    }
+
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        spacing: 8
+
+                        Repeater {
+                            model: timeInputModel
+                            RowLayout {
+                                spacing: 8
+                                Label {
+                                    text: "第" + (index + 1) + "个:"
+                                    font.pixelSize: 14; color: "#555"
+                                }
+                                Rectangle {
+                                    implicitWidth: 110; implicitHeight: 36; radius: 4
+                                    border.color: "#CCC"; color: "#FFF"
+                                    TextInput {
+                                        id: timeEditField
+                                        text: model.timeValue
+                                        anchors.fill: parent; anchors.leftMargin: 8
+                                        verticalAlignment: TextInput.AlignVCenter
+                                        font.pixelSize: 15; color: "#333"
+                                        selectByMouse: true
+                                        onEditingFinished: {
+                                            var newText = formatTimeInput(text)
+                                            timeInputModel.setProperty(index, "timeValue", newText)
+                                        }
+                                    }
+                                }
+                                Rectangle {
+                                    implicitWidth: 36; implicitHeight: 36; radius: 4
+                                    color: "#FFEBEE"
+                                    visible: timeInputModel.count > 1
+                                    MouseArea {
+                                        anchors.fill: parent
+                                        onClicked: {
+                                            timeInputModel.remove(index)
+                                        }
+                                    }
+                                    Label {
+                                        anchors.centerIn: parent
+                                        text: "✕"
+                                        font.pixelSize: 16; color: "#F44336"
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    RowLayout {
+                        spacing: 8
+                        ModernButton {
+                            text: "+ 添加时间"; implicitHeight: 36; font.pixelSize: 14
+                            onClicked: {
+                                timeInputModel.append({"timeValue": ""})
+                            }
+                        }
+                        ModernButton {
+                            text: "同步修改"; implicitHeight: 36; font.pixelSize: 14
+                            onClicked: {
+                                var validTimes = []
+                                for (var i = 0; i < timeInputModel.count; i++) {
+                                    var t = formatTimeInput(timeInputModel.get(i).timeValue.trim())
+                                    if (t) validTimes.push(t)
+                                }
+                                if (validTimes.length === 0) {
+                                    statusLabel.text = "请至少输入一个有效时间"
+                                    statusLabel.color = "#D32F2F"
+                                    return
+                                }
+                                statusLabel.text = "正在同步 " + dayPanelWindow.selectedDay + " 号..."
+                                attendanceSync.manualUpdateDay(pathInput.text, dayPanelWindow.selectedDay, JSON.stringify(validTimes))
+                            }
+                        }
+                    }
+                }
+
+                Item { Layout.fillHeight: true }
+
+                Label {
+                    text: "提示：关闭弹窗不会丢失数据，点击“打开日期校对窗口”可恢复"
+                    font.pixelSize: 10; color: "#999"; Layout.alignment: Qt.AlignHCenter
+                }
+            }
+        }
+
+        property int selectedDay: 0
+
+        function loadTimesForDay(allTimes) {
+            // 清空并重新填充时间输入框
+            timeInputModel.clear()
+            var times = allTimes.trim().split(/\s+/)
+            for (var i = 0; i < times.length; i++) {
+                if (times[i]) {
+                    timeInputModel.append({"timeValue": times[i]})
+                }
+            }
+            // 如果没有时间，至少添加一个空输入框
+            if (timeInputModel.count === 0) {
+                timeInputModel.append({"timeValue": ""})
+            }
+        }
+
+        function selectFirstDay() {
+            // 默认选中有数据的第一天
+            for (var i = 0; i < panelModel.count; i++) {
+                if (panelModel.get(i).allTimes) {
+                    selectedDay = panelModel.get(i).day
+                    loadTimesForDay(panelModel.get(i).allTimes)
+                    return
+                }
+            }
+            // 如果没有数据，选中1号
+            if (panelModel.count > 0) {
+                selectedDay = panelModel.get(0).day
+                loadTimesForDay("")
+            }
+        }
+
+        onVisibleChanged: {
+            if (visible) {
+                if (selectedDay > 0) {
+                    // 通过 panelModel 找到当前选中日期的 allTimes
+                    for (var i = 0; i < panelModel.count; i++) {
+                        if (panelModel.get(i).day === selectedDay) {
+                            loadTimesForDay(panelModel.get(i).allTimes)
+                            break
+                        }
+                    }
+                } else {
+                    selectFirstDay()
                 }
             }
         }
