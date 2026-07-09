@@ -10,20 +10,22 @@ Rectangle {
     // 扫描完成后启用清理按钮
     property bool scanDone: false
     property string scanInfo: ""
+    // 会话级浏览位置记忆：重启后重置为 D:\1上款
+    property string lastBrowseDir: "D:\\1上款"
 
-    FolderDialog { 
+    FolderDialog {
         id: dirDialog
         title: "选择目标目录"
         onAccepted: {
             dirInput.text = selectedFolder.toString().replace("file:///", "")
+            lastBrowseDir = dirInput.text
             videoProcessor.rememberDefaultDir(dirInput.text)
         }
     }
 
-    // 打开浏览对话框前，动态设置 currentFolder 为当前输入框路径
+    // 打开浏览对话框前，设置 currentFolder 为上次浏览位置
     function openDirDialog() {
-        var p = dirInput.text.replace(/\\/g, "/")
-        if (p) dirDialog.currentFolder = "file:///" + p
+        dirDialog.currentFolder = "file:///" + lastBrowseDir.replace(/\\/g, "/")
         dirDialog.open()
     }
 
@@ -82,7 +84,7 @@ Rectangle {
                         border.color: "#CCCCCC"
                         TextInput {
                             id: dirInput; anchors.fill: parent; anchors.leftMargin: 8; anchors.rightMargin: 8; verticalAlignment: TextInput.AlignVCenter
-                            text: videoProcessor.getDefaultDir(); color: "#333333"; font.pixelSize: 13
+                            text: "D:\\1上款"; color: "#333333"; font.pixelSize: 13
                         }
                     }
                     ModernButton {
@@ -112,17 +114,17 @@ Rectangle {
             ModernButton {
                 id: btnAnalyze
                 Layout.fillWidth: true; implicitHeight: 46; text: "🔍 仅分析检测"
-                onClicked: { logModel.clear(); videoProcessor.startTask(dirInput.text, formatCombo.currentText, "analyze") }
+                onClicked: { logModel.clear(); videoProcessor.startTask(dirInput.text, formatCombo.currentText, "analyze", false) }
             }
             ModernButton {
                 id: btnRename
                 Layout.fillWidth: true; implicitHeight: 46; text: "✏️ 批量重命名"
-                onClicked: { logModel.clear(); videoProcessor.startTask(dirInput.text, formatCombo.currentText, "rename") }
+                onClicked: { logModel.clear(); videoProcessor.startTask(dirInput.text, formatCombo.currentText, "rename", false) }
             }
             ModernButton {
                 id: btnCopy
                 Layout.fillWidth: true; implicitHeight: 46; text: "📋 提取副本到总目录"
-                onClicked: { logModel.clear(); videoProcessor.startTask(dirInput.text, formatCombo.currentText, "copy") }
+                onClicked: { logModel.clear(); videoProcessor.startTask(dirInput.text, formatCombo.currentText, "copy", false) }
             }
         }
 

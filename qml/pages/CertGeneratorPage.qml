@@ -11,7 +11,7 @@ Rectangle {
     FileDialog {
         id: imageFileDlg
         title: "选择模板图片"
-        currentFolder: certGenerator.getDefaultImageFolder() ? ("file:///" + certGenerator.getDefaultImageFolder().replace(/\\/g, "/")) : ""
+        currentFolder: "file:///D:/Desktop/上款"
         onAccepted: imageInput.text = selectedFile.toString().replace("file:///", "")
     }
 

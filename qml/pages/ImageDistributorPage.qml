@@ -8,28 +8,33 @@ Rectangle {
     color: "#F5F6F8"
     property var folderList: []
     property bool backendBusy: false
+    // 会话级浏览位置记忆：重启后重置为 D:\1上款
+    property string lastBrowseDir: "D:\\1上款"
 
     FileDialog {
         id: imageFileDialog
         title: "选择图片"
-        currentFolder: imageDistributor.getDefaultImageDir() ? ("file:///" + imageDistributor.getDefaultImageDir().replace(/\\/g, "/")) : ""
         nameFilters: ["图片文件 (*.jpg *.jpeg *.png *.bmp *.gif)", "所有文件 (*.*)"]
         onAccepted: {
             imageDistributor.setSourceImage(selectedFile.toString())
             sourceLabel.text = selectedFile.toString().replace("file:///", "")
+            // 记住浏览位置（取所选文件的父目录）
+            var fp = selectedFile.toString().replace("file:///", "")
+            var lastSlash = Math.max(fp.lastIndexOf("/"), fp.lastIndexOf("\\"))
+            if (lastSlash > 0) lastBrowseDir = fp.substring(0, lastSlash)
         }
     }
 
     FolderDialog {
         id: folderDialog
         title: "选择主文件夹"
-        currentFolder: imageDistributor.getLastTargetDir() ? ("file:///" + imageDistributor.getLastTargetDir().replace(/\\/g, "/")) : ""
         onAccepted: {
             var path = selectedFolder.toString().replace("file:///", "")
             if (imageDistributor.addTargetFolder(path)) {
                 folderList.push(path)
                 folderListModel.append({"folderPath": path})
             }
+            lastBrowseDir = path
         }
     }
 
@@ -79,9 +84,10 @@ Rectangle {
                     ModernButton {
                         text: "浏览图片..."
                         implicitHeight: 34; implicitWidth: 100
-                        onClicked: imageFileDialog.open()
-                        
-                        
+                        onClicked: {
+                            imageFileDialog.currentFolder = "file:///" + lastBrowseDir.replace(/\\/g, "/")
+                            imageFileDialog.open()
+                        }
                     }
                 }
             }
@@ -109,9 +115,10 @@ Rectangle {
                     ModernButton {
                         text: "添加文件夹"
                         implicitHeight: 34; implicitWidth: 100
-                        onClicked: folderDialog.open()
-                        
-                        
+                        onClicked: {
+                            folderDialog.currentFolder = "file:///" + lastBrowseDir.replace(/\\/g, "/")
+                            folderDialog.open()
+                        }
                     }
                     ModernButton {
                         text: "清空列表"

@@ -12,6 +12,8 @@ Rectangle {
     property bool latencyTesting: false
     property bool latencyStarted: false
     property string modelStatusText: modelDownloader.modelStatusText("u2net")
+    // 会话级浏览位置记忆：重启后重置为 D:\1上款
+    property string lastBrowseDir: "D:\\1上款"
 
     Connections {
         target: whiteBgProcessor
@@ -51,9 +53,9 @@ Rectangle {
     FolderDialog {
         id: dirDialog
         title: "选择当前目录"
-        currentFolder: whiteBgProcessor.getDefaultPath() ? ("file:///" + whiteBgProcessor.getDefaultPath().replace(/\\/g, "/")) : ""
         onAccepted: {
             dirInput.text = selectedFolder.toString().replace("file:///", "")
+            lastBrowseDir = dirInput.text
             whiteBgProcessor.rememberDefaultPath(dirInput.text)
         }
     }
@@ -62,7 +64,6 @@ Rectangle {
         id: filesDialog
         title: "选择独立图片文件"
         fileMode: FileDialog.OpenFiles
-        currentFolder: whiteBgProcessor.getDefaultPath() ? ("file:///" + whiteBgProcessor.getDefaultPath().replace(/\\/g, "/")) : ""
         nameFilters: ["Images (*.png *.jpg *.jpeg)"]
         onAccepted: {
             var paths = selectedIndependentFiles
@@ -74,6 +75,12 @@ Rectangle {
                 }
             }
             selectedIndependentFiles = paths
+            // 记住浏览位置（取第一个文件的父目录）
+            if (selectedFiles.length > 0) {
+                var firstPath = selectedFiles[0].toString().replace("file:///", "")
+                var lastSlash = Math.max(firstPath.lastIndexOf("/"), firstPath.lastIndexOf("\\"))
+                if (lastSlash > 0) lastBrowseDir = firstPath.substring(0, lastSlash)
+            }
         }
     }
 
@@ -110,18 +117,39 @@ Rectangle {
         TabBar {
             id: modeTab
             Layout.fillWidth: true
-            
+            background: Rectangle { color: "#E8E8E8" }
+
             TabButton {
                 text: "📁 模式一: 依文件名检测目录"
                 width: implicitWidth + 40
-                
-                
+                background: Rectangle {
+                    color: modeTab.currentIndex === 0 ? "#0078D4" : "#F5F5F5"
+                    border.color: modeTab.currentIndex === 0 ? "#0078D4" : "#CCCCCC"
+                }
+                contentItem: Text {
+                    text: parent.text
+                    color: modeTab.currentIndex === 0 ? "#FFFFFF" : "#333333"
+                    font.pixelSize: 13
+                    font.bold: modeTab.currentIndex === 0
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
+                }
             }
             TabButton {
                 text: "🖼️ 模式二: 处理独立指定文件"
                 width: implicitWidth + 40
-                
-                
+                background: Rectangle {
+                    color: modeTab.currentIndex === 1 ? "#0078D4" : "#F5F5F5"
+                    border.color: modeTab.currentIndex === 1 ? "#0078D4" : "#CCCCCC"
+                }
+                contentItem: Text {
+                    text: parent.text
+                    color: modeTab.currentIndex === 1 ? "#FFFFFF" : "#333333"
+                    font.pixelSize: 13
+                    font.bold: modeTab.currentIndex === 1
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
+                }
             }
         }
 
@@ -141,11 +169,14 @@ Rectangle {
                         Label { text: "当前目录:"; color: "#333333"; font.pixelSize: 14; font.bold: true; Layout.preferredWidth: 80 }
                         Rectangle {
                             Layout.fillWidth: true; Layout.preferredHeight: 34; radius: 4; border.color: "#CCCCCC"; color: "#FFFFFF"
-                            TextInput { id: dirInput; text: whiteBgProcessor.getDefaultPath(); anchors.fill: parent; anchors.leftMargin: 8; verticalAlignment: TextInput.AlignVCenter; color: "#333333"; font.pixelSize: 13; clip: true }
+                            TextInput { id: dirInput; text: "D:\\1上款"; anchors.fill: parent; anchors.leftMargin: 8; verticalAlignment: TextInput.AlignVCenter; color: "#333333"; font.pixelSize: 13; clip: true }
                         }
                         ModernButton {
                             text: "浏览目录"
-                            implicitHeight: 34; implicitWidth: 80; onClicked: dirDialog.open()
+                            implicitHeight: 34; implicitWidth: 80; onClicked: {
+                                dirDialog.currentFolder = "file:///" + lastBrowseDir.replace(/\\/g, "/")
+                                dirDialog.open()
+                            }
                         }
                     }
                     RowLayout {
@@ -164,7 +195,9 @@ Rectangle {
                                 resultModel.clear()
                                 logModel.clear()
                                 statusLabel.text = "检测中..."
-                                whiteBgProcessor.detectImages(dirInput.text, fileCombo.currentText)
+                                // 读取可编辑 ComboBox 的实际输入文字（currentText 在非预设值时不更新）
+                                var targetName = fileCombo.contentItem ? fileCombo.contentItem.text : fileCombo.currentText
+                                whiteBgProcessor.detectImages(dirInput.text, targetName)
                             }
                         }
                         ModernButton {
@@ -190,7 +223,10 @@ Rectangle {
                     anchors.fill: parent; anchors.margins: 15; spacing: 12
                     ModernButton {
                         Layout.fillWidth: true; implicitHeight: 40; text: "🖼️ 选择多张独立图片"
-                        onClicked: filesDialog.open()
+                        onClicked: {
+                            filesDialog.currentFolder = "file:///" + lastBrowseDir.replace(/\\/g, "/")
+                            filesDialog.open()
+                        }
                     }
                     Rectangle {
                         Layout.fillWidth: true; Layout.fillHeight: true; border.color: "#CCCCCC"; color: "#F9F9F9"
