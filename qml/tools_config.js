@@ -68,6 +68,13 @@ var categories = [
                 icon: "🖼️",
                 page: "pages/WhiteBgProcessorPage.qml",
                 tags: ["AI", "去背景", "白底图"]
+            },
+            {
+                id: "size-matcher",
+                name: "尺码表匹配",
+                icon: "📐",
+                page: "pages/SizeMatcherPage.qml",
+                tags: ["尺码", "匹配", "自动分发"]
             }
         ]
     },

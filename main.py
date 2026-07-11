@@ -20,6 +20,7 @@ from backends.product_matrix import ProductMatrixBackend
 from backends.attendance_sync import AttendanceSyncBackend
 from backends.cert_generator import CertGeneratorBackend
 from backends.white_bg_processor import WhiteBgProcessorBackend
+from backends.size_matcher import SizeMatcherBackend
 from backends.model_downloader import ModelDownloaderBackend
 from backends.update_checker import UpdateCheckerBackend
 
@@ -62,6 +63,7 @@ def main():
     model_downloader = ModelDownloaderBackend(str(app_dir))
     u2net_available = model_downloader.isDownloaded("u2net")
     white_bg = WhiteBgProcessorBackend(u2net_available, str(app_dir))
+    size_matcher = SizeMatcherBackend()
 
     # 模型下载完成后通知白底图后端激活功能
     def _on_model_downloaded(model_id: str, _path: str):
@@ -86,6 +88,7 @@ def main():
     ctx.setContextProperty("attendanceSync", attendance_sync)
     ctx.setContextProperty("certGenerator", cert_generator)
     ctx.setContextProperty("whiteBgProcessor", white_bg)
+    ctx.setContextProperty("sizeMatcher", size_matcher)
     ctx.setContextProperty("modelDownloader", model_downloader)
     ctx.setContextProperty("updateChecker", update_checker)
     ctx.setContextProperty("appVersion", __version__)
